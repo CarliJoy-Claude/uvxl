@@ -204,9 +204,7 @@ Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is
 Open:
 - `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
 - Windows: the `/dev/fd` pipe and `bin/` are POSIX only.
-- Concurrent runs building the same environment are not handled; no cache cleanup.
 - Keyring credentials (uv's `--keyring-provider`) are not looked up for the lock.
-- Errors from bad root metadata exit 1 like rejections; maybe they should exit 2.
 
 ### 5.4 Testing approach
 
@@ -252,13 +250,25 @@ Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting t
 
 ## 8. Code conventions (strict)
 
+### 8.1 PoC principles
+
+- This is a **proof of concept**, not a program that covers every case. Easy to understand beats complete.
+  Prefer the shortest code that shows the rule; leave rare cases out and list them under "Open" in section 5 instead of handling them.
+- Deliberately ignored: concurrent runs building the same environment, exit code details (any non-zero exit is fine for errors), cache cleanup.
+- **Commit each logical step** separately (refactor, feature, rule change, docs), so the git history shows what was done. Run the checks before each commit.
+- Command line interfaces use **click** (not argparse).
+- HTTP uses **httpx2** (not urllib).
+- F3 in the Python PoC: credentials for the lock come **only from keyring** (`keyring get`, the way uv's subprocess keyring provider does it), and only for a lock URL covered by a configured index. Tests use a fake `keyring` executable, never `uv auth`.
+
+### 8.2 Style
+
 - Target **Python 3.12** (`requires-python = ">=3.12"`).
 - Format with **`ruff format`**; lint with `ruff check` (rules E, F, I, UP, B, SIM, RUF, PL; `SIM108` and `PLR2004` ignored). Type-check with **`mypy --strict`**. All must pass before a change is done.
 - **No ternary operator** (`x if c else y`): use explicit `if`/`else` blocks. Explicit over implicit.
 - **Immutables everywhere:** `Mapping`, `Sequence`, `Set` in signatures; tuples and frozensets in code; `@dataclass(frozen=True, slots=True)`.
 - **Returned mappings are wrapped in `types.MappingProxyType`** (switch to `frozendict` once the target is Python 3.15+).
 - Error messages carry the spec rule ID in brackets.
-- Exceptions: `VerifyError` base, `LockRejected` (exit 1), `UvError` / fetch errors (exit 2), `MetadataError`.
+- Exceptions: `VerifyError` base, `LockRejected`, `UvError`, `FetchError`, `MetadataError`. Exit codes are not important in the PoC.
 - Markdown: start every sentence on a new line. In prose, do not use the en dash `–`; use `:` instead.
 - Rust (later): `cargo fmt`, `cargo clippy -- -D warnings`, same rule IDs in errors.
 

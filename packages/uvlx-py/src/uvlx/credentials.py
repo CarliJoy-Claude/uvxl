@@ -16,7 +16,6 @@ The lookup copies uv's subprocess keyring provider
   ``authenticate = always``.)
 """
 
-import base64
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -32,10 +31,6 @@ INDEX_LEAF_SEGMENTS: Final = frozenset(("simple", "+simple"))
 class Credentials:
     username: str
     password: str
-
-    def authorization(self) -> str:
-        pair = f"{self.username}:{self.password}".encode()
-        return "Basic " + base64.b64encode(pair).decode()
 
 
 def index_base(index_url: str) -> str:

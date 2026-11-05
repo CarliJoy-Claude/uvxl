@@ -190,7 +190,7 @@ Options after COMMAND belong to the command. Exit codes as above; once the comma
    The root becomes a `RootWheel` (name, version, filename, hashes, METADATA bytes); C7 binds the cleaned lock to exactly that file.
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
    No `Pylock` URL fails with `[M5]`.
-3. **Fetch:** urllib with manual redirects, https only, 1 MiB, 30 s, 5 redirects, credentials dropped for good once a redirect leaves the first origin. Pinned hash checked before parsing.
+3. **Fetch:** httpx2 with `follow_redirects` (limit 5; it drops `Authorization` once a redirect leaves the origin), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. httpx2 never reads netrc by itself. Pinned hash checked before parsing.
    Credentials (`credentials.py`) only if a configured index covers the URL: same origin, and the path under the index URL with a trailing `simple` or `+simple` segment removed (so devpi's `/user/index/+simple/` covers `/user/index/+f/...`). This devpi handling is an interpretation of F3: confirm it.
    Source: **keyring only**, like uv's subprocess provider (`crates/uv-auth/src/keyring.rs`): with the index URL's user name `keyring get <index-url> <user>`, then `keyring get <host:port> <user>`; without one `keyring get <index-url> --mode creds`. A password in the index URL, netrc and uv's credential store are not used.
 4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`; `clean(wheel_path, lock_path, ...)` remains for `pylock-verify-clean`.

@@ -1,20 +1,22 @@
-"""Fetching the lock (F4 to F6). Which credentials to send: ``uvlx.credentials``."""
+"""Fetching the lock (F4 to F6). Which credentials to send: ``uvlx.credentials``.
+
+httpx2 follows redirects up to the limit and removes the Authorization
+header as soon as a redirect leaves the origin (F3). A request hook refuses
+every non-https hop (F4). The body is streamed, so the size limit holds.
+"""
 
 import hashlib
-import urllib.error
-import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from email.message import Message
-from typing import IO, Final, override
-from urllib.parse import urljoin, urlsplit
+from typing import Final
+
+import httpx2
 
 from uvlx.credentials import Credentials
 from uvlx.errors import FetchError, LockRejected
 from uvlx.pylock_url import LockUrl
-from uvlx.urls import origin
 
-REDIRECT_CODES: Final = frozenset((301, 302, 303, 307, 308))
 USER_AGENT: Final = "uvlx/0.1"
 
 
@@ -37,70 +39,49 @@ class FetchedLock:
     fetched_at: str
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Redirects are followed by ``fetch_lock`` itself, to apply F3 and F4."""
+def https_only(policy: FetchPolicy) -> Callable[[httpx2.Request], None]:
+    """Request hook: every request, including redirects, must be https."""
 
-    @override
-    def redirect_request(
-        self,
-        req: urllib.request.Request,
-        fp: IO[bytes],
-        code: int,
-        msg: str,
-        headers: Message,
-        newurl: str,
-    ) -> urllib.request.Request | None:
-        return None
+    def check(request: httpx2.Request) -> None:
+        scheme = request.url.scheme
+        if scheme == "https" or (policy.allow_http and scheme == "http"):
+            return
+        raise FetchError(f"[F4] refusing non-https URL {request.url}")
 
-
-def check_scheme(url: str, policy: FetchPolicy) -> None:
-    scheme = urlsplit(url).scheme.lower()
-    if scheme == "https" or (policy.allow_http and scheme == "http"):
-        return
-    raise FetchError(f"[F4] refusing non-https URL {url!r}")
-
-
-def read_limited(response: IO[bytes], url: str, policy: FetchPolicy) -> bytes:
-    content = response.read(policy.max_size + 1)
-    if len(content) > policy.max_size:
-        raise FetchError(
-            f"[F4] the lock at {url} is larger than {policy.max_size} bytes"
-        )
-    return content
+    return check
 
 
 def download(
     url: str, credentials: Credentials | None, policy: FetchPolicy
 ) -> tuple[str, bytes]:
-    """GET with manual redirects; credentials never leave the first origin."""
-    opener = urllib.request.build_opener(_NoRedirect)
-    first_origin = origin(url)
-    current = url
-    for _ in range(policy.max_redirects + 1):
-        check_scheme(current, policy)
-        if origin(current) != first_origin:
-            credentials = None  # F3: dropped for good after leaving the origin
-        request = urllib.request.Request(current, headers={"User-Agent": USER_AGENT})
-        if credentials is not None:
-            request.add_unredirected_header(
-                "Authorization", credentials.authorization()
-            )
-        try:
-            with opener.open(request, timeout=policy.timeout) as response:
-                return current, read_limited(response, current, policy)
-        except urllib.error.HTTPError as error:
-            location = error.headers.get("Location")
-            if error.code not in REDIRECT_CODES or location is None:
-                raise FetchError(
-                    f"[F6] fetching the lock from {current} failed: "
-                    f"HTTP {error.code} {error.reason}"
-                ) from error
-            current = urljoin(current, location)
-        except (urllib.error.URLError, OSError) as error:
-            raise FetchError(
-                f"[F6] fetching the lock from {current} failed: {error}"
-            ) from error
-    raise FetchError(f"[F4] more than {policy.max_redirects} redirects for {url}")
+    """GET ``url``; return the final URL and the body."""
+    auth: tuple[str, str] | None = None
+    if credentials is not None:
+        auth = (credentials.username, credentials.password)
+    client = httpx2.Client(
+        follow_redirects=True,
+        max_redirects=policy.max_redirects,
+        timeout=policy.timeout,
+        headers={"User-Agent": USER_AGENT},
+        event_hooks={"request": [https_only(policy)]},
+    )
+    try:
+        with client, client.stream("GET", url, auth=auth) as response:
+            response.raise_for_status()
+            content = bytearray()
+            for chunk in response.iter_bytes():
+                content.extend(chunk)
+                if len(content) > policy.max_size:
+                    raise FetchError(
+                        f"[F4] the lock at {url} is larger than {policy.max_size} bytes"
+                    )
+            return str(response.url), bytes(content)
+    except httpx2.TooManyRedirects as error:
+        raise FetchError(f"[F4] too many redirects for {url}") from error
+    except httpx2.HTTPError as error:
+        raise FetchError(
+            f"[F6] fetching the lock from {url} failed: {error}"
+        ) from error
 
 
 def verify_pinned(lock_url: LockUrl, content: bytes) -> None:

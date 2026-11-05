@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.3",
+    "httpx2>=2.16",
     "packaging>=26",
     "tomli-w>=1.0",
 ]

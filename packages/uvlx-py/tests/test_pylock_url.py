@@ -1,9 +1,11 @@
 """The Pylock Project-URL (M1 to M5, N1) and credential coverage (F3)."""
 
+import httpx2
 import pytest
 
 from uvlx.credentials import covering_index
-from uvlx.errors import LockRejected
+from uvlx.errors import FetchError, LockRejected
+from uvlx.fetch import FetchPolicy, https_only
 from uvlx.pylock_url import find_lock_url, normalize_label
 
 HEX = "ab" * 32
@@ -111,3 +113,15 @@ def test_devpi_index_covers_its_own_paths_only(url: str, covered: bool) -> None:
 def test_plain_simple_index_covers_its_origin() -> None:
     index = "https://pypi.local/simple"
     assert covering_index("https://pypi.local/locks/pylock.toml", (index,)) == index
+
+
+# --------------------------------------------------------------------------
+# F4: every hop must be https
+# --------------------------------------------------------------------------
+
+
+def test_http_hop_is_refused() -> None:
+    check = https_only(FetchPolicy())
+    check(httpx2.Request("GET", "https://h.example/pylock.toml"))
+    with pytest.raises(FetchError, match=r"\[F4\]"):
+        check(httpx2.Request("GET", "http://h.example/pylock.toml"))

@@ -1,117 +1,128 @@
-"""Command line entry points.
+"""Command line entry points (click).
 
 Exit codes: 0 ok, 1 lock rejected, 2 uv, network or usage error.
 """
 
-import argparse
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from uvlx.clean import clean, render
+import click
+
+from uvlx.clean import CleanResult, clean, render
 from uvlx.errors import LockRejected, UvError, VerifyError
 from uvlx.lock import is_pylock_name
 from uvlx.uv import Uv, find_interpreter, find_uv
 
-
-def build_verify_clean_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="pylock-verify-clean",
-        description="Verify a pylock.toml for a root wheel with uv and write a "
-        "cleaned lock. Arguments after `--` are passed to every uv pip call "
-        "(for example `-- --index-url URL`).",
-    )
-    parser.add_argument(
-        "wheel", type=Path, help="the root wheel chosen by the installer"
-    )
-    parser.add_argument(
-        "lock", type=Path, help="the lock file (pylock.toml or pylock.<name>.toml)"
-    )
-    parser.add_argument(
-        "--extra",
-        action="append",
-        dest="extras",
-        metavar="NAME",
-        help="an extra of the root wheel to install; repeat for several",
-    )
-    parser.add_argument(
-        "--python",
-        metavar="REQUEST",
-        help="target interpreter, as understood by `uv python find`",
-    )
-    parser.add_argument("--uv", metavar="PATH", help="the uv executable to use")
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        help="write the cleaned lock here instead of stdout",
-    )
-    parser.add_argument(
-        "--install",
-        action="store_true",
-        help="install the cleaned lock into the target interpreter with uv",
-    )
-    return parser
+EXIT_REJECTED = 1
+EXIT_ERROR = 2
 
 
-def split_uv_args(argv: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    if "--" in argv:
-        position = list(argv).index("--")
-        return tuple(argv[:position]), tuple(argv[position + 1 :])
-    return tuple(argv), ()
+def guarded[T](action: Callable[[], T]) -> T:
+    """Run ``action``; report our errors on stderr and exit with their code."""
+    try:
+        return action()
+    except LockRejected as error:
+        click.echo(f"rejected: {error}", err=True)
+        sys.exit(EXIT_REJECTED)
+    except UvError as error:
+        click.echo(f"error: {error}", err=True)
+        sys.exit(EXIT_ERROR)
+    except VerifyError as error:
+        click.echo(f"rejected: {error}", err=True)
+        sys.exit(EXIT_REJECTED)
 
 
-def write_output(text: str, output: Path | None) -> None:
+def make_uv(uv_path: str | None, python: str | None, uv_args: Sequence[str]) -> Uv:
+    executable = find_uv(uv_path)
+    return Uv(executable, find_interpreter(executable, python), tuple(uv_args))
+
+
+def write_and_install(
+    result: CleanResult, uv: Uv, output: Path | None, install: bool
+) -> None:
+    text = render(result)
+    if output is None and install:
+        with tempfile.TemporaryDirectory() as directory:
+            lock = Path(directory) / "pylock.toml"
+            lock.write_text(text, encoding="utf-8")
+            uv.install(lock)
+        return
     if output is None:
-        sys.stdout.write(text)
+        click.echo(text, nl=False)
     else:
         output.write_text(text, encoding="utf-8")
+    if install and output is not None:
+        uv.install(output)
 
 
-def verify_clean_main(argv: Sequence[str] | None = None) -> int:
-    """``pylock-verify-clean``: verify a lock for a local root wheel."""
-    if argv is None:
-        argv = sys.argv[1:]
-    own_args, uv_args = split_uv_args(argv)
-    args = build_verify_clean_parser().parse_args(own_args)
-    if args.output is not None and not is_pylock_name(args.output.name):
-        print(
-            f"error: output name {args.output.name!r} must be pylock.toml "
-            "or pylock.<name>.toml (PEP 751), or installers will refuse it",
-            file=sys.stderr,
+@click.command(
+    name="pylock-verify-clean",
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+@click.argument("wheel", type=click.Path(path_type=Path, dir_okay=False))
+@click.argument("lock", type=click.Path(path_type=Path, dir_okay=False))
+@click.argument("uv_args", nargs=-1, type=click.UNPROCESSED, metavar="[-- UV_ARGS]...")
+@click.option(
+    "--extra",
+    "extras",
+    multiple=True,
+    metavar="NAME",
+    help="An extra of the root wheel to install; repeat for several.",
+)
+@click.option(
+    "--python",
+    metavar="REQUEST",
+    help="Target interpreter, as understood by `uv python find`.",
+)
+@click.option("--uv", "uv_path", metavar="PATH", help="The uv executable to use.")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="Write the cleaned lock here instead of stdout.",
+)
+@click.option(
+    "--install",
+    is_flag=True,
+    help="Install the cleaned lock into the target interpreter with uv.",
+)
+def verify_clean_main(  # noqa: PLR0913
+    *,
+    wheel: Path,
+    lock: Path,
+    uv_args: tuple[str, ...],
+    extras: tuple[str, ...],
+    python: str | None,
+    uv_path: str | None,
+    output: Path | None,
+    install: bool,
+) -> None:
+    """Verify LOCK for the root WHEEL with uv and write a cleaned lock.
+
+    Arguments after `--` are passed to every uv pip call, for example
+    `-- --index-url URL`.
+    """
+    if output is not None and not is_pylock_name(output.name):
+        raise click.UsageError(
+            f"output name {output.name!r} must be pylock.toml or "
+            "pylock.<name>.toml (PEP 751), or installers will refuse it"
         )
-        return 2
-    try:
-        executable = find_uv(args.uv)
-        uv = Uv(executable, find_interpreter(executable, args.python), uv_args)
-        result = clean(args.wheel, args.lock, uv, tuple(args.extras or ()))
-        text = render(result)
-        if args.install and args.output is None:
-            with tempfile.TemporaryDirectory() as directory:
-                lock = Path(directory) / "pylock.toml"
-                lock.write_text(text, encoding="utf-8")
-                uv.install(lock)
-        else:
-            write_output(text, args.output)
-            if args.install and args.output is not None:
-                uv.install(args.output)
-    except LockRejected as error:
-        print(f"rejected: {error}", file=sys.stderr)
-        return 1
-    except UvError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-    except VerifyError as error:
-        print(f"rejected: {error}", file=sys.stderr)
-        return 1
+
+    def action() -> CleanResult:
+        uv = make_uv(uv_path, python, uv_args)
+        result = clean(wheel, lock, uv, extras)
+        write_and_install(result, uv, output, install)
+        return result
+
+    result = guarded(action)
     summary = (
         f"ok: {len(result.packages)} package(s) in the cleaned lock; "
         f"{len(result.unreached)} lock entr(ies) not needed"
     )
     if result.unreached:
         summary += f": {', '.join(result.unreached)}"
-    if args.install:
+    if install:
         summary += "; installed"
-    print(summary, file=sys.stderr)
-    return 0
+    click.echo(summary, err=True)

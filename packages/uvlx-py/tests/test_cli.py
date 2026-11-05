@@ -6,6 +6,7 @@ import sys
 import tomllib
 
 import pytest
+from click.testing import CliRunner, Result
 
 from helpers import UV, ServedFile, World, build_wheel
 from uvlx.cli import verify_clean_main
@@ -13,9 +14,13 @@ from uvlx.cli import verify_clean_main
 pytestmark = pytest.mark.skipif(UV is None, reason="uv is not installed")
 
 
-def cli(world: World, *extra: str) -> int:
+def invoke(arguments: list[str]) -> Result:
+    return CliRunner().invoke(verify_clean_main, arguments)
+
+
+def cli(world: World, *extra: str) -> Result:
     assert UV is not None
-    return verify_clean_main(
+    return invoke(
         [
             str(world.wheels["app"]),
             str(world.write_lock(world.good_entries())),
@@ -31,21 +36,43 @@ def cli(world: World, *extra: str) -> int:
     )
 
 
-def test_cli_writes_cleaned_lock(
-    world: World, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_writes_cleaned_lock(world: World) -> None:
     output = world.directory / "pylock.cleaned.toml"
-    assert cli(world, "-o", str(output)) == 0
+    result = cli(world, "-o", str(output))
+    assert result.exit_code == 0, result.stderr
     document = tomllib.loads(output.read_text(encoding="utf-8"))
     assert [p["name"] for p in document["packages"]] == ["app", "dep-a", "dep-b"]
-    assert "evil" in capsys.readouterr().err
+    assert "evil" in result.stderr
 
 
-def test_cli_refuses_output_names_installers_refuse(
-    world: World, capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert cli(world, "-o", str(world.directory / "cleaned.toml")) == 2
-    assert "PEP 751" in capsys.readouterr().err
+def test_cli_prints_cleaned_lock_to_stdout(world: World) -> None:
+    result = cli(world)
+    assert result.exit_code == 0, result.stderr
+    document = tomllib.loads(result.stdout)
+    assert [p["name"] for p in document["packages"]] == ["app", "dep-a", "dep-b"]
+
+
+def test_cli_refuses_output_names_installers_refuse(world: World) -> None:
+    result = cli(world, "-o", str(world.directory / "cleaned.toml"))
+    assert result.exit_code == 2
+    assert "PEP 751" in result.stderr
+
+
+def test_cli_reports_rejection_with_exit_code_1(world: World) -> None:
+    entries = world.replaced("dep-a", world.entry("dep-a", index="https://x.invalid"))
+    result = invoke(
+        [
+            str(world.wheels["app"]),
+            str(world.write_lock(entries)),
+            "--python",
+            sys.executable,
+            "--",
+            "--index-url",
+            world.index.url,
+        ]
+    )
+    assert result.exit_code == 1
+    assert "[C5.3]" in result.stderr
 
 
 def fresh_venv(world: World) -> str:
@@ -59,9 +86,9 @@ def fresh_venv(world: World) -> str:
     return str(venv / "bin" / "python")
 
 
-def install_cli(world: World, target: str) -> int:
+def install_cli(world: World, target: str) -> Result:
     assert UV is not None
-    return verify_clean_main(
+    return invoke(
         [
             str(world.wheels["app"]),
             str(world.write_lock(world.good_entries())),
@@ -80,7 +107,8 @@ def install_cli(world: World, target: str) -> int:
 def test_cli_install_into_a_fresh_environment(world: World) -> None:
     assert UV is not None
     target = fresh_venv(world)
-    assert install_cli(world, target) == 0
+    result = install_cli(world, target)
+    assert result.exit_code == 0, result.stderr
     listed = subprocess.run(
         [UV, "pip", "list", "--python", target, "--format", "json"],
         check=True,
@@ -100,19 +128,17 @@ def serve_twin(world: World, real_salt: str, twin_salt: str) -> None:
     world.index.projects["dep-b"] = [ServedFile(real, replacement=twin)]
 
 
-def test_tampered_download_fails_the_hash_check(
-    world: World, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_tampered_download_fails_the_hash_check(world: World) -> None:
     # Same size, different bytes: uv must get to the hash check.
     serve_twin(world, real_salt="real", twin_salt="twin")
-    assert install_cli(world, fresh_venv(world)) == 2
-    assert "hash" in capsys.readouterr().err.lower()
+    result = install_cli(world, fresh_venv(world))
+    assert result.exit_code == 2
+    assert "hash" in result.stderr.lower()
 
 
-def test_tampered_download_of_other_size_fails_the_install(
-    world: World, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_tampered_download_of_other_size_fails_the_install(world: World) -> None:
     # uv 0.13 compares the locked size first and fails before hashing.
     serve_twin(world, real_salt="", twin_salt="twin")
-    assert install_cli(world, fresh_venv(world)) == 2
-    assert "dep-b" in capsys.readouterr().err
+    result = install_cli(world, fresh_venv(world))
+    assert result.exit_code == 2
+    assert "dep-b" in result.stderr

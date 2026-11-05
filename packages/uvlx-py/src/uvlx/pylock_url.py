@@ -1,4 +1,4 @@
-"""The ``Pylock`` Project-URL in the root's core metadata (M1 to M4, N1)."""
+"""The ``Pylock`` Project-URL in the root's core metadata (M1 to M5, N1)."""
 
 import re
 import string
@@ -88,7 +88,7 @@ def find_lock_url(
     urls = tuple(url for label, url in project_urls(metadata) if is_pylock(label))
     if not urls:
         raise LockRejected(
-            "[M1] the root has no Pylock Project-URL; a locked install is impossible"
+            "[M5] the root has no Pylock Project-URL; a locked install is impossible"
         )
     if len(urls) > 1:
         raise LockRejected(f"[M2] the root declares {len(urls)} Pylock URLs")

@@ -1,4 +1,4 @@
-"""The Pylock Project-URL (M1 to M4, N1) and credential coverage (F3)."""
+"""The Pylock Project-URL (M1 to M5, N1) and credential coverage (F3)."""
 
 import pytest
 
@@ -24,7 +24,7 @@ def test_label_is_normalized(label: str) -> None:
 
 
 def test_other_labels_are_ignored() -> None:
-    with pytest.raises(LockRejected, match=r"\[M1\]"):
+    with pytest.raises(LockRejected, match=r"\[M5\]"):
         find_lock_url(metadata("Homepage, https://h.example/pylock.toml"))
 
 

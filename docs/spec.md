@@ -16,7 +16,7 @@ Rule IDs are used in code and error messages (for example `[C5.3]`). Keep them s
   - Without a hash the mode is **mutable**.
   - Any unknown fragment parameter fails, because all fragment parameters are security related.
     An explicit installer flag may override this.
-- **No `Pylock` URL on the root wheel while a locked install was requested: fail.**
+- **M5.** No `Pylock` URL on the root wheel while a locked install was requested: fail.
 
 ## 3.2 File name
 

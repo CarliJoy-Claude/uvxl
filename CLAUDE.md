@@ -45,7 +45,7 @@ Rule IDs are used in code and error messages (for example `[C5.3]`). Keep them s
   - Without a hash the mode is **mutable**.
   - Any unknown fragment parameter fails, because all fragment parameters are security related.
     An explicit installer flag may override this.
-- **No `Pylock` URL on the root wheel while a locked install was requested: fail.**
+- **M5.** No `Pylock` URL on the root wheel while a locked install was requested: fail.
 
 ### 3.2 File name
 
@@ -160,7 +160,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 - The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvlx-py/src/uvlx/`, split into modules:
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `wheel` (root wheel from a file or from METADATA bytes), `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
-- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M4, N1), `fetch` (F3 to F6), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
+- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M5, N1), `fetch` (F3 to F6), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
 - CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
 - Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvlx.py`. 85 tests, all passing with uv 0.13.7.
 - An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
@@ -189,7 +189,7 @@ Options after COMMAND belong to the command. Exit codes as above; once the comma
    Then `uv pip install --no-deps --require-hashes --target <tmp> -r -` with `name==version --hash=...` for all those wheels: uv picks the wheel for the target interpreter, and the `Tag`/`Build` lines of the installed `WHEEL` file tell which one (compressed tags expanded with `packaging.tags.parse_tag`).
    The root becomes a `RootWheel` (name, version, filename, hashes, METADATA bytes); C7 binds the cleaned lock to exactly that file.
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
-   No `Pylock` URL fails with `[M1]`.
+   No `Pylock` URL fails with `[M5]`.
 3. **Fetch:** urllib with manual redirects, https only, 1 MiB, 30 s, 5 redirects, credentials dropped for good once a redirect leaves the first origin. Pinned hash checked before parsing.
    Credentials only if a configured index covers the URL: same origin, and the path under the index URL with a trailing `simple` or `+simple` segment removed (so devpi's `/user/index/+simple/` covers `/user/index/+f/...`). This devpi handling is an interpretation of F3: confirm it.
    Sources in order: user info of that index URL (from `--emit-index-url`), `uv auth token` (with and without the index URL's user name; `__token__` when none), netrc entry of the host.

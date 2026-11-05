@@ -187,7 +187,7 @@ def test_root_without_pylock_url_fails(world: World, out: Path) -> None:
     publish_app(world)
     result = uvlx(world, "app")
     assert result.exit_code == 1
-    assert "[M1]" in result.stderr
+    assert "[M5]" in result.stderr
     assert environments(world) == ()
 
 

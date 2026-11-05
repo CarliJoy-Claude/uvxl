@@ -203,7 +203,10 @@ Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is
 
 Open:
 - `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
-- Windows: the `/dev/fd` pipe and `bin/` are POSIX only.
+- Windows:
+  - `Uv.compile` passes constraints through `os.pipe`, `pass_fds` and `/dev/fd/N`: use a temp constraints file instead.
+  - Virtual environments use `Scripts\python.exe` and `Scripts\<command>.exe` instead of `bin/` (`Uv.create_venv`, `environments.py`).
+  - Tests: the fake `keyring` is a shebang script (needs a `.cmd` wrapper), `PATH` is joined with `:` (use `os.pathsep`), `fresh_venv` uses `bin/python`.
 
 ### 5.4 Testing approach
 

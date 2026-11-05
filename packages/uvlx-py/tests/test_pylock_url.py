@@ -2,8 +2,8 @@
 
 import pytest
 
+from uvlx.credentials import covering_index
 from uvlx.errors import LockRejected
-from uvlx.fetch import covering_index
 from uvlx.pylock_url import find_lock_url, normalize_label
 
 HEX = "ab" * 32

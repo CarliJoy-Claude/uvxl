@@ -175,22 +175,6 @@ class Uv:
             raise UvError(f"uv venv failed:\n{without_noise(result.stderr)}")
         return str(path / "bin" / "python")
 
-    def auth_token(self, url: str, username: str | None) -> str | None:
-        """A secret from uv's credential store (``uv auth login``), if any.
-
-        uv 0.13.7 finds stored credentials by URL prefix, but only with the
-        user name they were stored under. It does not see credentials from
-        index URLs, environment variables or netrc.
-        """
-        command: tuple[str, ...] = (self.executable, "auth", "token", url)
-        if username is not None:
-            command = (*command, "--username", username)
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        token = result.stdout.strip()
-        if result.returncode != 0 or not token:
-            return None
-        return token
-
 
 def find_uv(explicit: str | None) -> str:
     if explicit is not None:

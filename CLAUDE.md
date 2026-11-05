@@ -160,9 +160,9 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 - The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvlx-py/src/uvlx/`, split into modules:
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `wheel` (root wheel from a file or from METADATA bytes), `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
-- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M5, N1), `fetch` (F3 to F6), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
+- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M5, N1), `credentials` (F3, keyring), `fetch` (F4 to F6), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
 - CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
-- Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvlx.py`. 85 tests, all passing with uv 0.13.7.
+- Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvlx.py`. All passing with uv 0.13.7.
 - An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
 - `packages/uvlx-rs` is a placeholder binary (exits 2) that already builds as a wheel with maturin.
 
@@ -191,8 +191,8 @@ Options after COMMAND belong to the command. Exit codes as above; once the comma
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
    No `Pylock` URL fails with `[M5]`.
 3. **Fetch:** urllib with manual redirects, https only, 1 MiB, 30 s, 5 redirects, credentials dropped for good once a redirect leaves the first origin. Pinned hash checked before parsing.
-   Credentials only if a configured index covers the URL: same origin, and the path under the index URL with a trailing `simple` or `+simple` segment removed (so devpi's `/user/index/+simple/` covers `/user/index/+f/...`). This devpi handling is an interpretation of F3: confirm it.
-   Sources in order: user info of that index URL (from `--emit-index-url`), `uv auth token` (with and without the index URL's user name; `__token__` when none), netrc entry of the host.
+   Credentials (`credentials.py`) only if a configured index covers the URL: same origin, and the path under the index URL with a trailing `simple` or `+simple` segment removed (so devpi's `/user/index/+simple/` covers `/user/index/+f/...`). This devpi handling is an interpretation of F3: confirm it.
+   Source: **keyring only**, like uv's subprocess provider (`crates/uv-auth/src/keyring.rs`): with the index URL's user name `keyring get <index-url> <user>`, then `keyring get <host:port> <user>`; without one `keyring get <index-url> --mode creds`. A password in the index URL, netrc and uv's credential store are not used.
 4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`; `clean(wheel_path, lock_path, ...)` remains for `pylock-verify-clean`.
 5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>`, built with `uv venv` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
    The receipt `uvlx-receipt.json` (P1: lock URL, final URL, mode, pins, lock sha256, fetch time, root file and hashes, cleaned-lock sha256, interpreter) is written last; an environment without one is rebuilt.
@@ -204,17 +204,16 @@ Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is
 Open:
 - `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
 - Windows: the `/dev/fd` pipe and `bin/` are POSIX only.
-- Keyring credentials (uv's `--keyring-provider`) are not looked up for the lock.
 
 ### 5.4 Testing approach
 
 - Tests run **real `uv`** against a local fake PEP 691 index (`http.server` on 127.0.0.1) serving JSON pages, PEP 658 `.metadata`, multiple wheels per project, a `yanked` flag, a `replacement` file (valid wheel with different bytes, for hash-tamper tests) and optional Basic auth.
 - Built test wheels need METADATA, WHEEL and RECORD, or uv refuses them.
 - Tamper tests must serve a *valid* wheel with different bytes; a broken zip fails before the hash check.
-- Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` (uv credential store) and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
+- Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
 - Tests that need `uv` are skipped when it is not on PATH.
 - Pass `--allow-insecure-http`-style overrides only in tests; production code requires https.
-- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
+- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. A fake `keyring` executable (`helpers.FakeKeyring`, first on `PATH`, `UV_KEYRING_PROVIDER=subprocess` so uv uses it too) logs its calls; tests never use `uv auth`. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
 
 ## 6. uv findings (tested with uv 0.11.32, source read at 0.13.6 / commit 564a207)
 

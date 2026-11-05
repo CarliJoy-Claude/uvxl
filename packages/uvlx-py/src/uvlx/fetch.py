@@ -1,35 +1,20 @@
-"""Fetching the lock (F3 to F6).
+"""Fetching the lock (F4 to F6). Which credentials to send: ``uvlx.credentials``."""
 
-Credentials (F3) are sent only when a configured index covers the lock URL:
-same origin, and the lock's path lies under the index's base path. The base
-path is the index URL without a trailing ``simple`` or ``+simple`` segment,
-so ``https://pypi.local/user/index/+simple/`` covers
-``https://pypi.local/user/index/+f/<hash>/pylock.toml`` (devpi).
-Sources, in order: user info of that index URL, ``uv auth token`` (uv's own
-credential store), the netrc entry of the host. Nothing else is ever sent.
-"""
-
-import base64
 import hashlib
-import netrc
-import os
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import Message
-from pathlib import Path
 from typing import IO, Final, override
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit
 
+from uvlx.credentials import Credentials
 from uvlx.errors import FetchError, LockRejected
 from uvlx.pylock_url import LockUrl
 from uvlx.urls import origin
-from uvlx.uv import Uv
 
 REDIRECT_CODES: Final = frozenset((301, 302, 303, 307, 308))
-INDEX_LEAF_SEGMENTS: Final = frozenset(("simple", "+simple"))
 USER_AGENT: Final = "uvlx/0.1"
 
 
@@ -44,81 +29,12 @@ class FetchPolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class Credentials:
-    username: str
-    password: str
-
-    def authorization(self) -> str:
-        pair = f"{self.username}:{self.password}".encode()
-        return "Basic " + base64.b64encode(pair).decode()
-
-
-@dataclass(frozen=True, slots=True)
 class FetchedLock:
     lock_url: LockUrl
     final_url: str
     content: bytes
     sha256: str
     fetched_at: str
-
-
-def index_base(index_url: str) -> str:
-    """The path an index's credentials cover (without ``/simple``)."""
-    path = urlsplit(index_url).path.rstrip("/")
-    head, _, leaf = path.rpartition("/")
-    if leaf in INDEX_LEAF_SEGMENTS:
-        return head
-    return path
-
-
-def covering_index(url: str, configured: Sequence[str]) -> str | None:
-    """The configured index whose credentials may be sent to ``url`` (F3)."""
-    path = urlsplit(url).path
-    for index in configured:
-        if origin(index) != origin(url):
-            continue
-        base = index_base(index)
-        if not base or path == base or path.startswith(base + "/"):
-            return index
-    return None
-
-
-def netrc_credentials(host: str) -> Credentials | None:
-    location = os.environ.get("NETRC")
-    if location is None:
-        path = Path.home() / ".netrc"
-    else:
-        path = Path(location)
-    if not path.is_file():
-        return None
-    try:
-        entry = netrc.netrc(str(path)).authenticators(host)
-    except (OSError, netrc.NetrcParseError):
-        return None
-    if entry is None:
-        return None
-    login, _account, password = entry
-    return Credentials(login, password)
-
-
-def credentials_for(url: str, configured: Sequence[str], uv: Uv) -> Credentials | None:
-    """Rule F3: credentials for the lock URL, only from a covering index."""
-    index = covering_index(url, configured)
-    if index is None:
-        return None
-    parts = urlsplit(index)
-    username: str | None = None
-    if parts.username:
-        username = unquote(parts.username)
-    if username is not None and parts.password is not None:
-        return Credentials(username, unquote(parts.password))
-    token = uv.auth_token(url, username)
-    if token is not None:
-        if username is None:
-            # `uv auth login --token` stores the token under this user name.
-            return Credentials("__token__", token)
-        return Credentials(username, token)
-    return netrc_credentials(parts.hostname or "")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

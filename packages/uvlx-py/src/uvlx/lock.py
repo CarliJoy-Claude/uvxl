@@ -123,14 +123,20 @@ def parse_lock_entry(table: Mapping[str, object], name: str, where: str) -> Lock
 def load_lock(
     path: Path, root_name: str, environment: Environment
 ) -> Mapping[str, LockEntry]:
+    """Read a lock file; see ``parse_lock``."""
+    return parse_lock(path.name, path.read_bytes(), root_name, environment)
+
+
+def parse_lock(
+    file_name: str, content: bytes, root_name: str, environment: Environment
+) -> Mapping[str, LockEntry]:
     """Parse and check a lock; return the applicable entry per package name."""
-    if not is_pylock_name(path.name):
-        raise LockRejected(f"[N1] {path.name!r} is not a valid PEP 751 lock file name")
+    if not is_pylock_name(file_name):
+        raise LockRejected(f"[N1] {file_name!r} is not a valid PEP 751 lock file name")
     try:
-        with path.open("rb") as handle:
-            data = tomllib.load(handle)
-    except tomllib.TOMLDecodeError as error:
-        raise LockRejected(f"{path.name}: invalid TOML: {error}") from error
+        data = tomllib.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise LockRejected(f"{file_name}: invalid TOML: {error}") from error
     check_lock_header(data, environment)  # C1
 
     selected: dict[str, list[LockEntry]] = {}

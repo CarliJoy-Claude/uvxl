@@ -28,7 +28,7 @@ from packaging.version import Version
 
 from uvlx.candidates import Candidate, parse_candidates, yanked_releases
 from uvlx.errors import LockRejected, UvError, VerifyError
-from uvlx.lock import LockEntry, load_lock, lock_environment
+from uvlx.lock import LockEntry, lock_environment, parse_lock
 from uvlx.toml_values import common_verified
 from uvlx.urls import IndexKey, configured_index_for, index_key, strip_user_info
 from uvlx.uv import Uv, marker_environment
@@ -70,14 +70,14 @@ def check_root(
             f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
         )
     for wheel in candidate.wheels:
-        verified = common_verified({"sha256": root.sha256}, wheel.hashes)
+        verified = common_verified(root.hashes, wheel.hashes)
         if verified is not None and wheel.filename == root.filename:
             clean_wheel = CleanWheel(wheel.filename, wheel.url, wheel.size, verified)
             index = configured_index_for(wheel.url, configured)
             return CleanPackage(root.name, root.version, index, (clean_wheel,))
     raise LockRejected(
         f"[C7] the configured indexes do not serve {root.filename} "
-        f"(sha256 {root.sha256})"
+        f"with hashes {dict(root.hashes)}"
     )
 
 
@@ -117,7 +117,10 @@ def check_locked(
 
 
 def configured_indexes(uv: Uv, requirement: str) -> tuple[str, ...]:
-    """The indexes uv is configured with (CLI, env vars and config files)."""
+    """The indexes uv is configured with (CLI, env vars and config files).
+
+    The URLs keep their user info: it is one source of credentials (F3).
+    """
     output = uv.compile(
         requirement,
         "",
@@ -130,7 +133,7 @@ def configured_indexes(uv: Uv, requirement: str) -> tuple[str, ...]:
         ),
     )
     found = (INDEX_LINE_RE.match(line) for line in output.stdout.splitlines())
-    return tuple(strip_user_info(match.group(1)) for match in found if match)
+    return tuple(match.group(1) for match in found if match)
 
 
 def root_requirement(root: RootWheel, extras: frozenset[str]) -> str:
@@ -145,8 +148,20 @@ def clean(
     uv: Uv,
     extras: Sequence[str] = (),
 ) -> CleanResult:
-    """Verify ``lock_path`` for the root ``wheel`` and build the cleaned lock."""
-    root = load_root_wheel(wheel)
+    """Verify ``lock_path`` for a local root ``wheel``; see ``clean_root``."""
+    return clean_root(
+        load_root_wheel(wheel), lock_path.name, lock_path.read_bytes(), uv, extras
+    )
+
+
+def clean_root(
+    root: RootWheel,
+    lock_name: str,
+    lock_content: bytes,
+    uv: Uv,
+    extras: Sequence[str] = (),
+) -> CleanResult:
+    """Verify a lock for the chosen root wheel and build the cleaned lock."""
     requested = frozenset(canonicalize_name(extra) for extra in extras)
     unknown = requested - root.provides_extra
     if unknown:
@@ -154,7 +169,7 @@ def clean(
             f"{root.filename} has no extra(s): {', '.join(sorted(unknown))}"
         )
     environment = lock_environment(marker_environment(uv.python), requested)
-    lock = load_lock(lock_path, root.name, environment)
+    lock = parse_lock(lock_name, lock_content, root.name, environment)
 
     constraints = "".join(
         f"{entry.name}=={entry.version}\n"
@@ -167,7 +182,10 @@ def clean(
     )
     candidates = parse_candidates(output.stdout)
     yanked = yanked_releases(output.stderr)
-    configured = configured_indexes(uv, root_requirement(root, frozenset()))
+    configured = tuple(
+        strip_user_info(index)
+        for index in configured_indexes(uv, root_requirement(root, frozenset()))
+    )
     configured_keys = frozenset(index_key(index) for index in configured)
 
     packages: list[CleanPackage] = []

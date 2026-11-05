@@ -1,0 +1,31 @@
+# Virtual workspace root: no [project], only shared configuration.
+# Dependencies of the packages live in packages/*/pyproject.toml.
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4",
+    "pytest>=9.2",
+    "ruff>=0.17",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["packages/uvlx-py/src", "packages/uvlx-py/tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PL"]
+ignore = ["SIM108", "PLR2004"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = ["packages/uvlx-py/src", "packages/uvlx-py/tests"]
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["packages/uvlx-py/tests"]
+addopts = ["-ra"]

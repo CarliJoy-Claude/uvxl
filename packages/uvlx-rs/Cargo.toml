@@ -1,0 +1,12 @@
+[package]
+name = "uvlx-rs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "uvlx-rs"
+path = "src/main.rs"
+
+[dependencies]
+# Later: the uv crates, pinned to one exact version family (see CLAUDE.md, section 4).

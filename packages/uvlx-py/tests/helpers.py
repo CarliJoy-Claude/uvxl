@@ -26,6 +26,18 @@ VERSIONS: Mapping[str, str] = {
 }
 
 
+# The console script of test wheels: writes its arguments to $UVLX_TEST_OUT
+# and exits with 3, so tests see that arguments and exit codes pass through.
+SCRIPT_MODULE = """
+import os, sys
+
+def main():
+    with open(os.environ["UVLX_TEST_OUT"], "w") as handle:
+        handle.write(" ".join(sys.argv[1:]))
+    return 3
+"""
+
+
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -39,24 +51,38 @@ def build_wheel(  # noqa: PLR0913
     extras: Sequence[str] = (),
     tag: str = "py3-none-any",
     salt: str = "",
+    project_urls: Sequence[str] = (),
+    console_script: bool = False,
 ) -> Path:
-    """A minimal valid wheel. uv refuses wheels without METADATA, WHEEL, RECORD."""
+    """A minimal valid wheel. uv refuses wheels without METADATA, WHEEL, RECORD.
+
+    With ``console_script``, the wheel provides a command named like the
+    project; see ``SCRIPT_MODULE`` for what it does.
+    """
     dist = name.replace("-", "_")
     dist_info = f"{dist}-{version}.dist-info"
     lines = ["Metadata-Version: 2.3", f"Name: {name}", f"Version: {version}"]
+    lines.extend(f"Project-URL: {entry}" for entry in project_urls)
     lines.extend(f"Provides-Extra: {extra}" for extra in extras)
     lines.extend(f"Requires-Dist: {requirement}" for requirement in requires)
     wheel_file = (
         f"Wheel-Version: 1.0\nGenerator: test {salt}\n"
         f"Root-Is-Purelib: true\nTag: {tag}\n"
     )
-    record = "".join(
-        f"{dist_info}/{member},,\n" for member in ("METADATA", "WHEEL", "RECORD")
-    )
+    members: dict[str, str] = {
+        f"{dist_info}/METADATA": "\n".join(lines) + "\n\n",
+        f"{dist_info}/WHEEL": wheel_file,
+    }
+    if console_script:
+        members[f"{dist}_cli.py"] = SCRIPT_MODULE
+        members[f"{dist_info}/entry_points.txt"] = (
+            f"[console_scripts]\n{name} = {dist}_cli:main\n"
+        )
+    record = "".join(f"{member},,\n" for member in (*members, f"{dist_info}/RECORD"))
     path = directory / f"{dist}-{version}-{tag}.whl"
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(f"{dist_info}/METADATA", "\n".join(lines) + "\n\n")
-        archive.writestr(f"{dist_info}/WHEEL", wheel_file)
+        for member, text in members.items():
+            archive.writestr(member, text)
         archive.writestr(f"{dist_info}/RECORD", record)
     return path
 
@@ -83,6 +109,9 @@ class FakeIndex:
     expected_authorization: str | None = None
     projects: dict[str, list[ServedFile]] = field(default_factory=dict)
     requests: list[tuple[str, str | None]] = field(default_factory=list)
+    # Any other path: fixed content (a hosted lock) or a redirect target.
+    extra_files: dict[str, bytes] = field(default_factory=dict)
+    redirects: dict[str, str] = field(default_factory=dict)
 
     def start(self) -> None:
         index = self
@@ -98,7 +127,7 @@ class FakeIndex:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def do_GET(self) -> None:
+            def do_GET(self) -> None:  # noqa: PLR0911 (one branch per route)
                 authorization = self.headers.get("Authorization")
                 index.requests.append((self.path, authorization))
                 expected = index.expected_authorization
@@ -107,6 +136,15 @@ class FakeIndex:
                     self.send_header("WWW-Authenticate", 'Basic realm="test"')
                     self.send_header("Content-Length", "0")
                     self.end_headers()
+                    return
+                if self.path in index.redirects:
+                    self.send_response(302)
+                    self.send_header("Location", index.redirects[self.path])
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if self.path in index.extra_files:
+                    self.reply(index.extra_files[self.path], "application/toml")
                     return
                 if self.path.startswith("/simple/"):
                     name = self.path.removeprefix("/simple/").strip("/")
@@ -147,6 +185,9 @@ class FakeIndex:
     @property
     def url(self) -> str:
         return f"http://{self.host}/simple"
+
+    def base(self) -> str:
+        return f"http://{self.host}"
 
     def page(self, name: str) -> dict[str, object]:
         files: list[dict[str, object]] = []

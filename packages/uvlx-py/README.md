@@ -12,3 +12,13 @@ pylock-verify-clean WHEEL LOCK [--extra X] [--python REQ] [--uv PATH] [-o pylock
 ```
 
 Exit codes: 0 ok, 1 lock rejected, 2 uv, network or usage error.
+
+## `uvlx`
+
+```
+uvlx [--from REQ] [--python X] [--index-url URL] [--extra-index-url URL] [--uv-arg ARG] [--cache-dir DIR] [--allow-unknown-fragment] COMMAND [ARGS]...
+```
+
+Runs COMMAND like `uvx`, from an environment installed with the lock the root package links through its `Pylock` Project-URL.
+The lock is fetched on every run, verified against the configured indexes and cleaned; environments are cached by the cleaned lock and carry a receipt (`uvlx-receipt.json`).
+Exit codes as above; once the command runs, its own exit code.

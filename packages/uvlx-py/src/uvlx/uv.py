@@ -140,6 +140,57 @@ class Uv:
             message = without_noise(result.stderr)
             raise UvError(f"uv pip install failed:\n{message}")
 
+    def install_target(self, requirements: str, target: Path) -> None:
+        """Install hash-pinned requirements (stdin) into a plain directory."""
+        command = (
+            self.executable,
+            "pip",
+            "install",
+            "--python",
+            self.python,
+            "--target",
+            str(target),
+            "--no-deps",
+            "--require-hashes",
+            "--only-binary",
+            ":all:",
+            "-r",
+            "-",
+            *self.extra_args,
+        )
+        result = subprocess.run(
+            command, input=requirements, capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            message = without_noise(result.stderr)
+            raise UvError(f"uv pip install --target failed:\n{message}")
+
+    def create_venv(self, path: Path) -> str:
+        """Create a virtual environment for the target interpreter."""
+        command = (self.executable, "venv", "--quiet", "--python", self.python)
+        result = subprocess.run(
+            (*command, str(path)), capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            raise UvError(f"uv venv failed:\n{without_noise(result.stderr)}")
+        return str(path / "bin" / "python")
+
+    def auth_token(self, url: str, username: str | None) -> str | None:
+        """A secret from uv's credential store (``uv auth login``), if any.
+
+        uv 0.13.7 finds stored credentials by URL prefix, but only with the
+        user name they were stored under. It does not see credentials from
+        index URLs, environment variables or netrc.
+        """
+        command: tuple[str, ...] = (self.executable, "auth", "token", url)
+        if username is not None:
+            command = (*command, "--username", username)
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        token = result.stdout.strip()
+        if result.returncode != 0 or not token:
+            return None
+        return token
+
 
 def find_uv(explicit: str | None) -> str:
     if explicit is not None:

@@ -22,3 +22,6 @@ Kept in sync with section 6 of `CLAUDE.md`, extended as we learn.
   A tampered file of another size fails with "Size mismatch", never reaching the hash check.
   Tests cover both paths (`test_tampered_download_fails_the_hash_check` uses a same-size twin).
 - uv 0.13.5: `uv pip install -r pylock.toml` prints "The `--pylock` option is experimental" on stderr.
+- uv 0.13.7: `--emit-index-url` prints index URLs **with** their user info.
+- uv 0.13.7: `uv auth token URL` only sees `uv auth login` credentials, by URL prefix, and only with `--username` when they were stored with a user name. It does not see credentials from index URLs, `UV_INDEX_*` variables or netrc.
+- uv 0.13.7: `uv pip install --target DIR --no-deps --require-hashes -r -` works with `--python`; the dist-info keeps the wheel's `WHEEL` file, whose `Tag` lines identify the installed wheel.

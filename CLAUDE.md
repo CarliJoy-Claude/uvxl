@@ -156,12 +156,14 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 ## 5. Python PoC: current state and plan
 
-### 5.1 Existing code (migrated 2026-11-05)
+### 5.1 Existing code (migrated 2026-11-05, `uvlx` run added 2026-11-05)
 
 - The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvlx-py/src/uvlx/`, split into modules:
-  `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `wheel` (root wheel), `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render), `cli` (`pylock-verify-clean` = `uvlx.cli:verify_clean_main`).
-- Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`. 33 tests, all passing with uv 0.13.5.
-- An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it, except possibly its credential and redirect handling for fetching the lock (F3, F4).
+  `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `wheel` (root wheel from a file or from METADATA bytes), `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
+- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M4, N1), `fetch` (F3 to F6), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
+- CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
+- Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvlx.py`. 85 tests, all passing with uv 0.13.7.
+- An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
 - `packages/uvlx-rs` is a placeholder binary (exits 2) that already builds as a wheel with maturin.
 
 ### 5.2 How v2 works (uv CLI as engine)
@@ -175,29 +177,46 @@ uv has no Python API (the PyPI `uv` package only ships the binary), so the PoC d
 5. The cleaned lock is written with `tomli_w`; with `--install`, a temp `pylock.toml` is installed with `uv pip install -r`.
 6. Markers are evaluated for the **target** interpreter (found with `uv python find`, queried with a small script), not the one running the tool.
 
-CLI today: `verify_and_clean.py WHEEL LOCK [--extra X] [--python REQ] [--uv PATH] [-o pylock.x.toml] [--install] [-- <args passed to every uv pip call>]`.
+CLI: `pylock-verify-clean WHEEL LOCK [--extra X] [--python REQ] [--uv PATH] [-o pylock.x.toml] [--install] [-- <args passed to every uv pip call>]`.
 Exit codes: 0 ok, 1 lock rejected, 2 uv, network or usage error.
 
-### 5.3 Next step: `uvlx` (run a package with its linked lock, like `uvx`)
+### 5.3 `uvlx` (run a package with its linked lock, like `uvx`): done
 
-1. Pick the root: `uv pip compile - --no-deps --only-binary :all: --format pylock.toml` with the requirement on stdin gives URL and hash of the chosen wheel (F7).
-2. Read the `Pylock` URL from the root's METADATA (not in the compile output). Idea, untested: `uv pip install --no-deps --target <tmp> app==<version>` and read the dist-info. **Fail if there is no `Pylock` URL.**
-3. Fetch the lock: N1, M2 to M4, F3 to F6. Credentials are the open problem: try `uv auth token <url>` (untested whether it covers config, env vars and netrc); fallback netrc and user info in the index URL.
-4. Verify and clean. Change the root input from "local wheel file" to "name, version and hash from step 1".
-5. Environment cache keyed by the hash of the cleaned lock: `uv venv` and `uv pip install -r pylock.toml`. Reuse on the next run.
-6. Run the console script from the environment's `bin/`, uvx-like `--from` handling.
-7. Optionally `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
+`uvlx [--from REQ] [--python X] [--index-url URL] [--extra-index-url URL] [--uv-arg ARG] [--cache-dir DIR] [--allow-unknown-fragment] COMMAND [ARGS]...`
+Options after COMMAND belong to the command. Exit codes as above; once the command runs, its own exit code.
 
-Also: P1 receipt, the fetch step tests, and Windows (the `/dev/fd` pipe is POSIX only; Windows needs a temp constraints file).
+1. **Root (F7):** `uv pip compile --no-deps --only-binary :all: --format pylock.toml` picks the version and lists every compatible wheel with hashes.
+   Then `uv pip install --no-deps --require-hashes --target <tmp> -r -` with `name==version --hash=...` for all those wheels: uv picks the wheel for the target interpreter, and the `Tag`/`Build` lines of the installed `WHEEL` file tell which one (compressed tags expanded with `packaging.tags.parse_tag`).
+   The root becomes a `RootWheel` (name, version, filename, hashes, METADATA bytes); C7 binds the cleaned lock to exactly that file.
+2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
+   No `Pylock` URL fails with `[M1]`.
+3. **Fetch:** urllib with manual redirects, https only, 1 MiB, 30 s, 5 redirects, credentials dropped for good once a redirect leaves the first origin. Pinned hash checked before parsing.
+   Credentials only if a configured index covers the URL: same origin, and the path under the index URL with a trailing `simple` or `+simple` segment removed (so devpi's `/user/index/+simple/` covers `/user/index/+f/...`). This devpi handling is an interpretation of F3: confirm it.
+   Sources in order: user info of that index URL (from `--emit-index-url`), `uv auth token` (with and without the index URL's user name; `__token__` when none), netrc entry of the host.
+4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`; `clean(wheel_path, lock_path, ...)` remains for `pylock-verify-clean`.
+5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>`, built with `uv venv` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
+   The receipt `uvlx-receipt.json` (P1: lock URL, final URL, mode, pins, lock sha256, fetch time, root file and hashes, cleaned-lock sha256, interpreter) is written last; an environment without one is rebuilt.
+   The lock is fetched and verified on every run (it is mutable); only the environment is reused.
+6. **Run:** `<env>/bin/<command>` with a subprocess; the default command is the requirement's name as typed.
+
+Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is no command line flag for it.
+
+Open:
+- `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
+- Windows: the `/dev/fd` pipe and `bin/` are POSIX only.
+- Concurrent runs building the same environment are not handled; no cache cleanup.
+- Keyring credentials (uv's `--keyring-provider`) are not looked up for the lock.
+- Errors from bad root metadata exit 1 like rejections; maybe they should exit 2.
 
 ### 5.4 Testing approach
 
 - Tests run **real `uv`** against a local fake PEP 691 index (`http.server` on 127.0.0.1) serving JSON pages, PEP 658 `.metadata`, multiple wheels per project, a `yanked` flag, a `replacement` file (valid wheel with different bytes, for hash-tamper tests) and optional Basic auth.
 - Built test wheels need METADATA, WHEEL and RECORD, or uv refuses them.
 - Tamper tests must serve a *valid* wheel with different bytes; a broken zip fails before the hash check.
-- Fixture environment: `UV_NO_CACHE=1`, temp `HOME` and `XDG_CONFIG_HOME`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
+- Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` (uv credential store) and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
 - Tests that need `uv` are skipped when it is not on PATH.
 - Pass `--allow-insecure-http`-style overrides only in tests; production code requires https.
+- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
 
 ## 6. uv findings (tested with uv 0.11.32, source read at 0.13.6 / commit 564a207)
 
@@ -216,6 +235,9 @@ Also: P1 receipt, the fetch step tests, and Windows (the `/dev/fd` pipe is POSIX
 - uv's auth middleware applies index credentials by URL prefix, so a lock under an index path would get its credentials automatically in a Rust implementation.
 - `uv_tool_commands::run` takes 27 parameters and resolves internally with no hook for a pre-built resolution; a Rust `uvlx` needs its own run flow around `sync_environment`, plus copied settings glue from `crates/uv/src/lib.rs`.
 - Earlier experiments (uv 0.13.6, httpie): `uv run --frozen` with a hand-edited `uv.lock` pointing the root at the uploaded wheel works, but plain `uv run` re-locks it; pylock is ignored by `uvx`.
+- uv 0.13.7: `--emit-index-url` prints index URLs **with** their user info.
+- uv 0.13.7: `uv auth token URL` only sees `uv auth login` credentials, by URL prefix, and only with `--username` when they were stored with a user name. It does not see credentials from index URLs, `UV_INDEX_*` variables or netrc.
+- uv 0.13.7: `uv pip install --target DIR --no-deps --require-hashes -r -` works with `--python`; the dist-info keeps the wheel's `WHEEL` file, whose `Tag` lines identify the installed wheel.
 - uv 0.13.5: `uv pip install -r pylock.toml` checks the locked `size` before the hash; a tampered file of another size fails with "Size mismatch". Tamper tests need a same-size twin to reach the hash check. It also prints a "`--pylock` option is experimental" warning.
 
 ## 7. Estimates and options considered

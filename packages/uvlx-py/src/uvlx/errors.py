@@ -15,3 +15,7 @@ class MetadataError(VerifyError):
 
 class UvError(VerifyError):
     """Running uv failed for a reason other than the lock. Exit 2."""
+
+
+class FetchError(VerifyError):
+    """The lock could not be fetched (network, HTTP status, limits). Exit 2."""

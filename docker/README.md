@@ -26,12 +26,16 @@ Stop it with `docker compose down` (add `-v` to also drop the login and caches).
 
 ## Settings
 
-Put these in a `.env` file next to `compose.yaml` (it is git-ignored):
+Local settings live in `.env` next to `compose.yaml` (git-ignored, optional).
+Compose uses it twice: for the `${...}` values in `compose.yaml`, and through `env_file` as environment of the container.
 
+- `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`: identity for commits made in the container.
+- `HOST_UID`, `HOST_GID`: your host IDs, so files written to the mount belong to you (default 1000).
 - `CLAUDE_PERMISSION_MODE`: permission mode for spawned sessions (default `acceptEdits`).
   The container is the isolation boundary, so `bypassPermissions` is an option, but note it can still push with any credentials you give it.
-- `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`: identity for commits made in the container.
-- `HOST_UID`, `HOST_GID`: your host IDs, so files written to the mount belong to you (default 1000).
+- Any other variable you add is passed into the container as well.
+
+With `HOST_UID` and `HOST_GID` in `.env`, a plain `docker compose build` is enough.
 
 ## Notes
 

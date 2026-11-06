@@ -1,22 +1,19 @@
 """Command line entry points (click).
 
-Errors exit with 1 (usage errors with 2); ``uvxl`` passes on the exit code of
-the command it runs.
-
-Tests pass ``obj=FetchPolicy(allow_http=True)`` to reach a local index;
-there is deliberately no command line flag for that.
+Errors exit with 1 (usage errors with 2); ``uvxl-py`` passes on the exit code
+of the command it runs.
 """
 
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 import click
 
-from uvxl_py.environments import default_cache_dir
 from uvxl_py.errors import VerifyError
-from uvxl_py.fetch import FetchPolicy
 from uvxl_py.lock import verify_entries
 from uvxl_py.root import parse_root_request
 from uvxl_py.run import prepare
@@ -32,9 +29,14 @@ def reported_errors() -> Iterator[None]:
         raise click.ClickException(str(error)) from error
 
 
-def make_uv(python: str | None, uv_args: Sequence[str]) -> Uv:
+def make_uv(
+    python: str | None,
+    global_args: Sequence[str] = (),
+    resolver_args: Sequence[str] = (),
+) -> Uv:
     executable = find_uv()
-    return Uv(executable, find_interpreter(executable, python), tuple(uv_args))
+    interpreter = find_interpreter(executable, python, global_args)
+    return Uv(executable, interpreter, tuple(global_args), tuple(resolver_args))
 
 
 # --------------------------------------------------------------------------
@@ -61,8 +63,110 @@ def verify_main(lock: Path, package: str) -> None:
 
 
 # --------------------------------------------------------------------------
-# uvxl
+# uvxl-py
 # --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class UvOption:
+    """A ``uvx`` option that the Python backend passes to uv unchanged."""
+
+    flags: tuple[str, ...]
+    # "flag" (no value), "count" (repeatable flag), "value" or "values".
+    kind: str
+    # Every uv call (False) or only the ``uv pip`` calls (True).
+    resolver: bool
+
+    @property
+    def name(self) -> str:
+        return self.flags[-1].removeprefix("--").replace("-", "_")
+
+
+# The uvx options both backends support, with uvx's names and meaning.
+PASS_THROUGH: Final = (
+    UvOption(("--index",), "values", resolver=True),
+    UvOption(("--default-index",), "value", resolver=True),
+    UvOption(("-i", "--index-url"), "value", resolver=True),
+    UvOption(("--extra-index-url",), "values", resolver=True),
+    UvOption(("-f", "--find-links"), "values", resolver=True),
+    UvOption(("--no-index",), "flag", resolver=True),
+    UvOption(("--index-strategy",), "value", resolver=True),
+    UvOption(("--keyring-provider",), "value", resolver=True),
+    UvOption(("--resolution",), "value", resolver=True),
+    UvOption(("--prerelease",), "value", resolver=True),
+    UvOption(("--exclude-newer",), "value", resolver=True),
+    UvOption(("-n", "--no-cache"), "flag", resolver=False),
+    UvOption(("--cache-dir",), "value", resolver=False),
+    UvOption(("--offline",), "flag", resolver=False),
+    UvOption(("--allow-insecure-host",), "values", resolver=False),
+    UvOption(("--system-certs",), "flag", resolver=False),
+    UvOption(("--config-file",), "value", resolver=False),
+    UvOption(("--no-config",), "flag", resolver=False),
+    UvOption(("--managed-python",), "flag", resolver=False),
+    UvOption(("--no-managed-python",), "flag", resolver=False),
+    UvOption(("--no-python-downloads",), "flag", resolver=False),
+    UvOption(("-q", "--quiet"), "count", resolver=False),
+    UvOption(("-v", "--verbose"), "count", resolver=False),
+)
+
+# uvx options that would bypass the lock: refused, as by the Rust backend.
+REFUSED: Final = (
+    ("-w", "--with"),
+    ("--with-editable",),
+    ("--with-requirements",),
+    ("-c", "--constraints"),
+    ("--overrides",),
+)
+
+
+def uvx_options[F: Callable[..., None]](function: F) -> F:
+    """Add the pass-through and refused uvx options to a click command."""
+    for spec in reversed(PASS_THROUGH):
+        envvar = None
+        if spec.name == "allow_insecure_host":
+            # uv reads the variable itself; the lock URL check needs it too.
+            envvar = "UV_INSECURE_HOST"
+        if spec.kind == "flag":
+            option = click.option(*spec.flags, spec.name, is_flag=True)
+        elif spec.kind == "count":
+            option = click.option(*spec.flags, spec.name, count=True)
+        else:
+            multiple = spec.kind == "values"
+            option = click.option(
+                *spec.flags, spec.name, multiple=multiple, envvar=envvar
+            )
+        function = option(function)
+    for flags in reversed(REFUSED):
+        function = click.option(*flags, multiple=True, hidden=True)(function)
+    return function
+
+
+def uv_arguments(options: Mapping[str, object], resolver: bool) -> tuple[str, ...]:
+    """The uv arguments for the pass-through options of one group."""
+    arguments: list[str] = []
+    for spec in PASS_THROUGH:
+        value = options[spec.name]
+        flag = spec.flags[-1]
+        if spec.resolver != resolver:
+            continue
+        if spec.kind == "flag" and value:
+            arguments.append(flag)
+        elif spec.kind == "count" and isinstance(value, int):
+            arguments.extend((flag,) * value)
+        elif spec.kind == "values" and isinstance(value, tuple):
+            for item in value:
+                arguments.extend((flag, str(item)))
+        elif spec.kind == "value" and value is not None:
+            arguments.extend((flag, str(value)))
+    return tuple(arguments)
+
+
+def refuse_lock_bypasses(options: Mapping[str, object]) -> None:
+    for flags in REFUSED:
+        if options[flags[-1].removeprefix("--").replace("-", "_")]:
+            raise click.ClickException(
+                f"{flags[-1]} is not supported with a locked run"
+            )
 
 
 @click.command(
@@ -82,52 +186,42 @@ def verify_main(lock: Path, package: str) -> None:
     "Default: COMMAND itself.",
 )
 @click.option(
+    "-p",
     "--python",
     metavar="REQUEST",
     help="Target interpreter, as understood by `uv python find`.",
 )
-@click.option(
-    "--uv-arg",
-    "uv_args",
-    multiple=True,
-    metavar="ARG",
-    help="An argument for every uv pip call, like `--uv-arg=--index-url=URL`; "
-    "repeatable. uv's own settings and UV_* variables apply as usual.",
-)
-@click.option(
-    "--cache-dir",
-    type=click.Path(path_type=Path, file_okay=False),
-    help="Where environments are kept. Default: $XDG_CACHE_HOME/uvxl or ~/.cache/uvxl.",
-)
-@click.pass_context
+@uvx_options
 def uvxl_main(
-    context: click.Context,
     *,
     command: str,
     args: tuple[str, ...],
     from_: str | None,
     python: str | None,
-    uv_args: tuple[str, ...],
-    cache_dir: Path | None,
+    **options: object,
 ) -> None:
     """Run COMMAND from a package installed with the lock its metadata links.
 
-    Like `uvx`, but the package must declare a `Pylock` Project-URL; the lock
-    is verified against the configured indexes before anything is installed.
+    Like `uvx`, with uvx's option names, but the package must declare a
+    `Pylock` Project-URL; the lock is verified against the configured indexes
+    before anything is installed. Options other than `--from` and `--python`
+    go to uv unchanged.
     """
-    policy = context.find_object(FetchPolicy)
-    if policy is None:
-        policy = FetchPolicy()
-    if cache_dir is None:
-        cache_dir = default_cache_dir()
+    refuse_lock_bypasses(options)
     if from_ is None:
         requirement = command
     else:
         requirement = from_
+    hosts = options["allow_insecure_host"]
+    insecure_hosts: tuple[str, ...] = ()
+    if isinstance(hosts, tuple):
+        insecure_hosts = tuple(str(host) for host in hosts)
     with reported_errors():
         request = parse_root_request(requirement)
-        uv = make_uv(python, uv_args)
-        prepared = prepare(uv, request, cache_dir, policy)
+        uv = make_uv(
+            python, uv_arguments(options, resolver=False), uv_arguments(options, True)
+        )
+        prepared = prepare(uv, request, insecure_hosts)
     if from_ is None:
         command = request.raw_name
     environment = prepared.environment
@@ -135,7 +229,7 @@ def uvxl_main(
     if environment.created:
         state = "created"
     click.echo(
-        f"uvxl: {prepared.root.name} {prepared.root.version}, "
+        f"uvxl-py: {prepared.root.name} {prepared.root.version}, "
         f"{prepared.fetched.lock_url.mode} lock {prepared.fetched.lock_url.url}, "
         f"environment {state}: {environment.path}",
         err=True,
@@ -144,4 +238,4 @@ def uvxl_main(
     if not path.is_file():
         raise click.ClickException(f"{prepared.root.name} provides no {command!r}")
     completed = subprocess.run((str(path), *args), check=False)
-    context.exit(completed.returncode)
+    raise SystemExit(completed.returncode)

@@ -1,7 +1,7 @@
 """The ``Pylock`` Project-URL in the root's core metadata (M1 to M5, N1)."""
 
 import string
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from email.parser import BytesHeaderParser
 from email.policy import compat32
@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlsplit
 from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.lock import is_pylock_name
 from uvxl_py.toml_values import SUPPORTED_HASHES
+from uvxl_py.urls import is_insecure_host
 
 LABEL: Final = "pylock"
 
@@ -67,14 +68,11 @@ def parse_fragment(fragment: str) -> Mapping[str, str]:
     return MappingProxyType(pinned)
 
 
-def find_lock_url(
-    metadata: bytes,
-    *,
-    allow_http: bool = False,
-) -> LockUrl:
+def find_lock_url(metadata: bytes, insecure_hosts: Sequence[str] = ()) -> LockUrl:
     """The root's lock URL. Missing, duplicate or invalid: fail.
 
-    ``allow_http`` exists for tests against a local index only.
+    Plain http is accepted only for hosts in uv's ``--allow-insecure-host``,
+    as uv does for indexes.
     """
     urls = tuple(url for label, url in project_urls(metadata) if is_pylock(label))
     if not urls:
@@ -84,11 +82,10 @@ def find_lock_url(
     if len(urls) > 1:
         raise LockRejectedError(f"[M2] the root declares {len(urls)} Pylock URLs")
     parts = urlsplit(urls[0])
-    if allow_http:
-        allowed: tuple[str, ...] = ("https", "http")
-    else:
-        allowed = ("https",)
-    if parts.scheme.lower() not in allowed or not parts.hostname:
+    insecure = parts.scheme.lower() == "http" and is_insecure_host(
+        urls[0], insecure_hosts
+    )
+    if (parts.scheme.lower() != "https" and not insecure) or not parts.hostname:
         raise LockRejectedError(f"[M3] the Pylock URL must be https: {urls[0]!r}")
     lock_url = LockUrl(
         url=parts._replace(fragment="").geturl(),

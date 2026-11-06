@@ -56,11 +56,28 @@ def run_uv(executable: str, arguments: Sequence[str], stdin: str = "") -> UvOutp
 
 @dataclass(frozen=True, slots=True)
 class Uv:
-    """The uv executable, the target interpreter, and extra arguments."""
+    """The uv executable, the target interpreter, and uvx options for uv.
+
+    ``global_args`` go to every uv call (cache, network, configuration),
+    ``resolver_args`` only to the ``uv pip`` calls (indexes, resolution).
+    """
 
     executable: str
     python: str
-    extra_args: tuple[str, ...] = ()
+    global_args: tuple[str, ...] = ()
+    resolver_args: tuple[str, ...] = ()
+
+    @property
+    def pip_args(self) -> tuple[str, ...]:
+        return (*self.global_args, *self.resolver_args)
+
+    def with_python(self, python: str) -> "Uv":
+        return Uv(self.executable, python, self.global_args, self.resolver_args)
+
+    def cache_dir(self) -> Path:
+        """uv's cache directory (``--cache-dir``, ``UV_CACHE_DIR``, default)."""
+        output = run_uv(self.executable, ("cache", "dir", *self.global_args))
+        return Path(output.stdout.strip())
 
     def compile(
         self, requirement: str, constraints: str, options: Sequence[str]
@@ -82,7 +99,7 @@ class Uv:
                 self.python,
                 "--no-header",
                 *options,
-                *self.extra_args,
+                *self.pip_args,
             )
             try:
                 return run_uv(self.executable, arguments, requirement + "\n")
@@ -96,7 +113,7 @@ class Uv:
     def install(self, lock: Path) -> None:
         """Rule C8: install a cleaned lock; uv enforces its hashes."""
         arguments = ("pip", "install", "--python", self.python, "-r", str(lock))
-        run_uv(self.executable, (*arguments, *self.extra_args))
+        run_uv(self.executable, (*arguments, *self.pip_args))
 
     def install_target(self, requirement: str, target: Path) -> None:
         """Install one wheel, without dependencies, into a plain directory."""
@@ -112,12 +129,12 @@ class Uv:
             ":all:",
             requirement,
         )
-        run_uv(self.executable, (*arguments, *self.extra_args))
+        run_uv(self.executable, (*arguments, *self.pip_args))
 
     def create_venv(self, path: Path) -> str:
         """Create (or recreate) a virtual environment for the target interpreter."""
         arguments = ("venv", "--quiet", "--clear", "--python", self.python, str(path))
-        run_uv(self.executable, arguments)
+        run_uv(self.executable, (*arguments, *self.global_args))
         return str(path / "bin" / "python")
 
 
@@ -128,12 +145,14 @@ def find_uv() -> str:
     return found
 
 
-def find_interpreter(uv: str, request: str | None) -> str:
+def find_interpreter(
+    uv: str, request: str | None, global_args: Sequence[str] = ()
+) -> str:
     """The interpreter uv would use (respecting .venv and uv's settings)."""
     arguments: tuple[str, ...] = ("python", "find")
     if request is not None:
         arguments = (*arguments, request)
-    return run_uv(uv, arguments).stdout.strip()
+    return run_uv(uv, (*arguments, *global_args)).stdout.strip()
 
 
 def marker_environment(interpreter: str) -> Mapping[str, str]:

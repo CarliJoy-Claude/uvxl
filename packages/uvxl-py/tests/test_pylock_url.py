@@ -4,8 +4,9 @@ import httpx2
 import pytest
 
 from uvxl_py.errors import LockRejectedError, VerifyError
-from uvxl_py.fetch import FetchPolicy, https_only
+from uvxl_py.fetch import https_only
 from uvxl_py.pylock_url import find_lock_url, normalize_label
+from uvxl_py.urls import is_insecure_host
 
 HEX = "ab" * 32
 
@@ -87,7 +88,43 @@ def test_named_lock_file_and_percent_encoding() -> None:
 
 
 def test_http_hop_is_refused() -> None:
-    check = https_only(FetchPolicy())
+    check = https_only(())
     check(httpx2.Request("GET", "https://h.example/pylock.toml"))
     with pytest.raises(VerifyError, match=r"\[F4\]"):
         check(httpx2.Request("GET", "http://h.example/pylock.toml"))
+
+
+def test_http_hop_to_an_insecure_host_is_allowed() -> None:
+    check = https_only(("h.example",))
+    check(httpx2.Request("GET", "http://h.example/pylock.toml"))
+    with pytest.raises(VerifyError, match=r"\[F4\]"):
+        check(httpx2.Request("GET", "http://other.example/pylock.toml"))
+
+
+# --------------------------------------------------------------------------
+# --allow-insecure-host: uv's syntax and matching
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("hosts", "allowed"),
+    [
+        (("*",), True),
+        (("h.example",), True),
+        (("h.example:8080",), True),
+        (("http://h.example:8080",), True),
+        (("https://h.example",), False),
+        (("h.example:9090",), False),
+        (("other.example",), False),
+        ((), False),
+    ],
+)
+def test_insecure_host_matching(hosts: tuple[str, ...], allowed: bool) -> None:
+    assert is_insecure_host("http://h.example:8080/pylock.toml", hosts) is allowed
+
+
+def test_http_lock_url_needs_an_insecure_host() -> None:
+    entry = metadata("Pylock, http://h.example/pylock.toml")
+    assert find_lock_url(entry, ("h.example",)).url == "http://h.example/pylock.toml"
+    with pytest.raises(LockRejectedError, match=r"\[M3\]"):
+        find_lock_url(entry, ("other.example",))

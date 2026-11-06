@@ -13,7 +13,6 @@ from click.testing import CliRunner, Result
 
 from helpers import UV, FakeIndex, ServedFile, World, build_wheel
 from uvxl_py.cli import uvxl_main
-from uvxl_py.fetch import FetchPolicy
 
 pytestmark = pytest.mark.skipif(UV is None, reason="uv is not installed")
 
@@ -25,6 +24,8 @@ def out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Where the test wheel's console script writes its arguments."""
     path = tmp_path / "script-out.txt"
     monkeypatch.setenv("UVXL_TEST_OUT", str(path))
+    # Environments live in uv's cache, given with --cache-dir below.
+    monkeypatch.delenv("UV_NO_CACHE")
     return path
 
 
@@ -56,29 +57,23 @@ def lock_sha256(world: World) -> str:
     return hashlib.sha256(world.index.extra_files[LOCK_PATH]).hexdigest()
 
 
-def uvxl(
-    world: World,
-    *arguments: str,
-    policy: FetchPolicy | None = None,
-) -> Result:
-    if policy is None:
-        policy = FetchPolicy(allow_http=True)
-    return CliRunner().invoke(
-        uvxl_main,
-        [
-            "--python",
-            sys.executable,
-            f"--uv-arg=--index-url={world.index.url}",
-            "--cache-dir",
-            str(world.directory / "uvxl-cache"),
-            *arguments,
-        ],
-        obj=policy,
-    )
+def uvxl(world: World, *arguments: str, insecure: bool = True) -> Result:
+    """Run uvxl-py. The fake index is plain http: allow it like uv does."""
+    options = [
+        "--python",
+        sys.executable,
+        "--index-url",
+        world.index.url,
+        "--cache-dir",
+        str(world.directory / "uv-cache"),
+    ]
+    if insecure:
+        options.extend(("--allow-insecure-host", "127.0.0.1"))
+    return CliRunner().invoke(uvxl_main, [*options, *arguments])
 
 
 def environments(world: World) -> tuple[Path, ...]:
-    envs = world.directory / "uvxl-cache" / "envs"
+    envs = world.directory / "uv-cache" / "uvxl" / "envs"
     if not envs.exists():
         return ()
     return tuple(sorted(envs.iterdir()))
@@ -202,7 +197,7 @@ def test_unknown_fragment_is_refused(world: World, out: Path) -> None:
 
 def test_http_lock_url_is_refused_in_production(world: World, out: Path) -> None:
     publish_app(world, f"Pylock, {host_lock(world)}")
-    result = uvxl(world, "app", policy=FetchPolicy())
+    result = uvxl(world, "app", insecure=False)
     assert result.exit_code == 1
     assert "[M3]" in result.stderr
 
@@ -217,7 +212,8 @@ def test_missing_lock_is_a_fetch_error(world: World, out: Path) -> None:
 
 def test_oversized_lock_is_refused(world: World, out: Path) -> None:
     publish_app(world, f"Pylock, {host_lock(world)}")
-    result = uvxl(world, "app", policy=FetchPolicy(allow_http=True, max_size=100))
+    world.index.extra_files[LOCK_PATH] = b"#" * (1024 * 1024 + 1)
+    result = uvxl(world, "app")
     assert result.exit_code == 1
     assert "[F4]" in result.stderr
 

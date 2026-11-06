@@ -8,12 +8,12 @@
    (``uvxl_py.environments``, C8, P1).
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 from uvxl_py.clean import clean_root, render
 from uvxl_py.environments import LockedEnvironment, ensure_environment
-from uvxl_py.fetch import FetchedLock, FetchPolicy, fetch_lock
+from uvxl_py.fetch import FetchedLock, fetch_lock
 from uvxl_py.pylock_url import find_lock_url
 from uvxl_py.root import RootRequest, RootWheel, select_root
 from uvxl_py.uv import Uv
@@ -29,15 +29,14 @@ class Prepared:
 def prepare(
     uv: Uv,
     request: RootRequest,
-    cache_dir: Path,
-    policy: FetchPolicy,
+    insecure_hosts: Sequence[str] = (),
 ) -> Prepared:
     """Build (or reuse) the locked environment for ``request``."""
     root = select_root(uv, request)
-    lock_url = find_lock_url(root.metadata, allow_http=policy.allow_http)
-    fetched = fetch_lock(lock_url, policy)
+    lock_url = find_lock_url(root.metadata, insecure_hosts)
+    fetched = fetch_lock(lock_url, insecure_hosts)
     result = clean_root(
         root, lock_url.file_name, fetched.content, uv, tuple(sorted(request.extras))
     )
-    environment = ensure_environment(uv, render(result), fetched, root, cache_dir)
+    environment = ensure_environment(uv, render(result), fetched, root)
     return Prepared(root, fetched, environment)

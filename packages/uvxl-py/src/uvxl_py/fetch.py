@@ -5,11 +5,12 @@ must be readable without login. Credentials for privately hosted locks are
 left to the Rust version, which can use uv's own credential handling.
 
 httpx2 follows redirects up to the limit; a request hook refuses every
-non-https hop (F4). The body is streamed, so the size limit holds.
+non-https hop (F4), except to hosts in uv's ``--allow-insecure-host``. The
+body is streamed, so the size limit holds.
 """
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
@@ -18,18 +19,12 @@ import httpx2
 
 from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.pylock_url import LockUrl
+from uvxl_py.urls import is_insecure_host
 
 USER_AGENT: Final = "uvxl/0.1"
 TIMEOUT: Final = 30.0
 MAX_REDIRECTS: Final = 5
-
-
-@dataclass(frozen=True, slots=True)
-class FetchPolicy:
-    """What tests may change: the size limit (F4) and plain http."""
-
-    max_size: int = 1024 * 1024
-    allow_http: bool = False
+MAX_SIZE: Final = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,26 +35,28 @@ class FetchedLock:
     fetched_at: str
 
 
-def https_only(policy: FetchPolicy) -> Callable[[httpx2.Request], None]:
+def https_only(insecure_hosts: Sequence[str]) -> Callable[[httpx2.Request], None]:
     """Request hook: every request, including redirects, must be https."""
 
     def check(request: httpx2.Request) -> None:
         scheme = request.url.scheme
-        if scheme == "https" or (policy.allow_http and scheme == "http"):
+        if scheme == "https" or (
+            scheme == "http" and is_insecure_host(str(request.url), insecure_hosts)
+        ):
             return
         raise VerifyError(f"[F4] refusing non-https URL {request.url}")
 
     return check
 
 
-def download(url: str, policy: FetchPolicy) -> bytes:
+def download(url: str, insecure_hosts: Sequence[str]) -> bytes:
     """GET ``url`` without credentials; return the body."""
     client = httpx2.Client(
         follow_redirects=True,
         max_redirects=MAX_REDIRECTS,
         timeout=TIMEOUT,
         headers={"User-Agent": USER_AGENT},
-        event_hooks={"request": [https_only(policy)]},
+        event_hooks={"request": [https_only(insecure_hosts)]},
     )
     try:
         with client, client.stream("GET", url) as response:
@@ -67,9 +64,9 @@ def download(url: str, policy: FetchPolicy) -> bytes:
             content = bytearray()
             for chunk in response.iter_bytes():
                 content.extend(chunk)
-                if len(content) > policy.max_size:
+                if len(content) > MAX_SIZE:
                     raise VerifyError(
-                        f"[F4] the lock at {url} is larger than {policy.max_size} bytes"
+                        f"[F4] the lock at {url} is larger than {MAX_SIZE} bytes"
                     )
             return bytes(content)
     except httpx2.TooManyRedirects as error:
@@ -91,9 +88,9 @@ def verify_pinned(lock_url: LockUrl, content: bytes) -> None:
             )
 
 
-def fetch_lock(lock_url: LockUrl, policy: FetchPolicy) -> FetchedLock:
+def fetch_lock(lock_url: LockUrl, insecure_hosts: Sequence[str]) -> FetchedLock:
     """Fetch and (in pinned mode) verify the lock. Any failure is fatal (F6)."""
-    content = download(lock_url.url, policy)
+    content = download(lock_url.url, insecure_hosts)
     verify_pinned(lock_url, content)
     return FetchedLock(
         lock_url=lock_url,

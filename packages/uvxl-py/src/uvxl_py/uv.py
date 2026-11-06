@@ -16,6 +16,7 @@ from typing import Final
 import packaging
 
 from uvxl_py.errors import LockRejectedError, VerifyError
+from uvxl_py.venv import executable
 
 PACKAGING_PATH: Final = str(Path(packaging.__file__).parent.parent)
 
@@ -135,7 +136,7 @@ class Uv:
         """Create (or recreate) a virtual environment for the target interpreter."""
         arguments = ("venv", "--quiet", "--clear", "--python", self.python, str(path))
         run_uv(self.executable, (*arguments, *self.global_args))
-        return str(path / "bin" / "python")
+        return str(executable(path, "python"))
 
 
 def find_uv() -> str:

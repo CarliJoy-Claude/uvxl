@@ -13,6 +13,7 @@ from click.testing import CliRunner, Result
 
 from helpers import UV, FakeIndex, ServedFile, World, build_wheel
 from uvxl_py.cli import uvxl_main
+from uvxl_py.venv import executable
 
 pytestmark = pytest.mark.skipif(UV is None, reason="uv is not installed")
 
@@ -87,7 +88,7 @@ def installed(environment: Path) -> frozenset[str]:
             "pip",
             "list",
             "--python",
-            str(environment / "bin" / "python"),
+            str(executable(environment, "python")),
             "--format",
             "json",
         ],

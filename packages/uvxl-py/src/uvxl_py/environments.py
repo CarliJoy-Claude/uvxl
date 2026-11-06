@@ -16,6 +16,7 @@ from typing import Final
 from uvxl_py.fetch import FetchedLock
 from uvxl_py.root import RootWheel
 from uvxl_py.uv import Uv
+from uvxl_py.venv import executable
 
 RECEIPT_NAME: Final = "uvxl-receipt.json"
 LOCK_NAME: Final = "pylock.uvxl.toml"
@@ -27,7 +28,7 @@ class LockedEnvironment:
     created: bool
 
     def executable(self, command: str) -> Path:
-        return self.path / "bin" / command
+        return executable(self.path, command)
 
 
 def ensure_environment(

@@ -15,7 +15,7 @@ from typing import Final
 
 import packaging
 
-from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.errors import LockRejectedError, VerifyError
 
 PACKAGING_PATH: Final = str(Path(packaging.__file__).parent.parent)
 
@@ -88,7 +88,7 @@ class Uv:
                 return run_uv(self.executable, arguments, requirement + "\n")
             except VerifyError as error:
                 if "No solution found" in str(error):
-                    raise LockRejected(
+                    raise LockRejectedError(
                         f"[C5] uv finds no resolution within the lock's pins: {error}"
                     ) from error
                 raise

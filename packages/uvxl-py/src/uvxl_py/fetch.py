@@ -16,7 +16,7 @@ from typing import Final
 
 import httpx2
 
-from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.pylock_url import LockUrl
 
 USER_AGENT: Final = "uvxl/0.1"
@@ -85,7 +85,7 @@ def verify_pinned(lock_url: LockUrl, content: bytes) -> None:
     for algorithm, expected in lock_url.pinned.items():
         actual = hashlib.new(algorithm, content).hexdigest()
         if actual != expected:
-            raise LockRejected(
+            raise LockRejectedError(
                 f"[F5] the lock at {lock_url.url} has {algorithm} {actual}, "
                 f"the Pylock URL pins {expected}"
             )

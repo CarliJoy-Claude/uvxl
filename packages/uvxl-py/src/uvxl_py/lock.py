@@ -12,7 +12,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvxl_py.errors import LockRejected
+from uvxl_py.errors import LockRejectedError
 from uvxl_py.toml_values import (
     expect_mapping,
     expect_sequence,
@@ -50,13 +50,13 @@ def evaluate_lock_marker(raw: object, environment: Environment, where: str) -> b
         marker = Marker(expect_str(raw, where))
         return marker.evaluate(environment, context="lock_file")
     except ValueError as error:
-        raise LockRejected(f"{where}: invalid marker: {error}") from error
+        raise LockRejectedError(f"{where}: invalid marker: {error}") from error
 
 
 def check_lock_header(data: Mapping[str, object], environment: Environment) -> None:
     """Rule C1: supported version, and the lock covers this environment."""
     if data.get("lock-version") != "1.0":
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C1] unsupported lock-version {data.get('lock-version')!r}"
         )
     environments = data.get("environments")
@@ -64,7 +64,7 @@ def check_lock_header(data: Mapping[str, object], environment: Environment) -> N
         evaluate_lock_marker(marker, environment, "environments")
         for marker in expect_sequence(environments, "environments")
     ):
-        raise LockRejected("[C1] the lock does not cover this environment")
+        raise LockRejectedError("[C1] the lock does not cover this environment")
     requires_python = data.get("requires-python")
     if requires_python is None:
         return
@@ -74,20 +74,20 @@ def check_lock_header(data: Mapping[str, object], environment: Environment) -> N
             python, prereleases=True
         )
     except ValueError as error:
-        raise LockRejected(f"[C1] invalid requires-python: {error}") from error
+        raise LockRejectedError(f"[C1] invalid requires-python: {error}") from error
     if not covered:
-        raise LockRejected(f"[C1] requires-python excludes Python {python}")
+        raise LockRejectedError(f"[C1] requires-python excludes Python {python}")
 
 
 def check_entry_sources(table: Mapping[str, object], where: str) -> None:
     """Rule C3 for one entry: registry sources only, hashes everywhere."""
     for forbidden in ("vcs", "directory", "archive"):
         if forbidden in table:
-            raise LockRejected(f"[C3] {where} uses a {forbidden!r} source")
+            raise LockRejectedError(f"[C3] {where} uses a {forbidden!r} source")
     wheels = expect_sequence(table.get("wheels", ()), f"{where}.wheels")
     sdist = table.get("sdist")
     if not wheels and sdist is None:
-        raise LockRejected(f"[C3] {where} lists no wheel and no sdist")
+        raise LockRejectedError(f"[C3] {where} lists no wheel and no sdist")
     sources = tuple(
         expect_mapping(wheel, f"{where}.wheels[{position}]")
         for position, wheel in enumerate(wheels)
@@ -96,7 +96,7 @@ def check_entry_sources(table: Mapping[str, object], where: str) -> None:
         sources = (*sources, expect_mapping(sdist, f"{where}.sdist"))
     for source in sources:
         if not supported_hashes(source.get("hashes", {}), f"{where} hashes"):
-            raise LockRejected(
+            raise LockRejectedError(
                 f"[C3] {where} has a file without a usable sha256/sha384/sha512 hash"
             )
 
@@ -105,7 +105,7 @@ def parse_lock_entry(table: Mapping[str, object], name: str, where: str) -> Lock
     try:
         version = Version(expect_str(table.get("version"), f"[C3] {where}.version"))
     except ValueError as error:
-        raise LockRejected(f"[C3] {where}: invalid version: {error}") from error
+        raise LockRejectedError(f"[C3] {where}: invalid version: {error}") from error
     index = expect_str(table.get("index"), f"[C3] {where}.index")
     wheel_hashes = tuple(
         supported_hashes(
@@ -122,11 +122,13 @@ def parse_lock_entry(table: Mapping[str, object], name: str, where: str) -> Lock
 def read_lock_toml(file_name: str, content: bytes) -> Mapping[str, object]:
     """Rule N1 on the file name, then the TOML document."""
     if not is_pylock_name(file_name):
-        raise LockRejected(f"[N1] {file_name!r} is not a valid PEP 751 lock file name")
+        raise LockRejectedError(
+            f"[N1] {file_name!r} is not a valid PEP 751 lock file name"
+        )
     try:
         return tomllib.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        raise LockRejected(f"{file_name}: invalid TOML: {error}") from error
+        raise LockRejectedError(f"{file_name}: invalid TOML: {error}") from error
 
 
 def parse_lock(
@@ -155,7 +157,7 @@ def parse_lock(
 
     for locked_name, entries in selected.items():
         if len(entries) > 1:
-            raise LockRejected(
+            raise LockRejectedError(
                 f"[C4] {len(entries)} entries for {locked_name} "
                 "apply to this environment"
             )
@@ -184,7 +186,9 @@ def verify_entries(file_name: str, content: bytes, package: str) -> int:
         if name == root and "directory" in table:
             directories += 1
             if directories > 1:
-                raise LockRejected(f"[C2] more than one directory entry for {root}")
+                raise LockRejectedError(
+                    f"[C2] more than one directory entry for {root}"
+                )
             continue
         check_entry_sources(table, where)
         parse_lock_entry(table, name, where)

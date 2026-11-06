@@ -3,7 +3,7 @@
 import httpx2
 import pytest
 
-from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.fetch import FetchPolicy, https_only
 from uvxl_py.pylock_url import find_lock_url, normalize_label
 
@@ -25,12 +25,12 @@ def test_label_is_normalized(label: str) -> None:
 
 
 def test_other_labels_are_ignored() -> None:
-    with pytest.raises(LockRejected, match=r"\[M5\]"):
+    with pytest.raises(LockRejectedError, match=r"\[M5\]"):
         find_lock_url(metadata("Homepage, https://h.example/pylock.toml"))
 
 
 def test_two_pylock_urls_fail() -> None:
-    with pytest.raises(LockRejected, match=r"\[M2\]"):
+    with pytest.raises(LockRejectedError, match=r"\[M2\]"):
         find_lock_url(
             metadata(
                 "Pylock, https://h.example/pylock.toml",
@@ -43,7 +43,7 @@ def test_two_pylock_urls_fail() -> None:
     "url", ["http://h.example/pylock.toml", "file:///pylock.toml", "pylock.toml"]
 )
 def test_scheme_must_be_https(url: str) -> None:
-    with pytest.raises(LockRejected, match=r"\[M3\]"):
+    with pytest.raises(LockRejectedError, match=r"\[M3\]"):
         find_lock_url(metadata(f"Pylock, {url}"))
 
 
@@ -58,13 +58,13 @@ def test_pinned_hash_is_parsed_and_removed_from_the_url() -> None:
 
 @pytest.mark.parametrize("fragment", ["md5=abc", f"sha256={HEX}&egg=app"])
 def test_only_hash_parameters_are_allowed(fragment: str) -> None:
-    with pytest.raises(LockRejected, match=r"\[M4\]"):
+    with pytest.raises(LockRejectedError, match=r"\[M4\]"):
         find_lock_url(metadata(f"Pylock, https://h.example/pylock.toml#{fragment}"))
 
 
 def test_unknown_fragment_parameter_fails() -> None:
     entry = f"Pylock, https://h.example/pylock.toml#sha256={HEX}&sigstore=x"
-    with pytest.raises(LockRejected, match=r"\[M4\]"):
+    with pytest.raises(LockRejectedError, match=r"\[M4\]"):
         find_lock_url(metadata(entry))
 
 
@@ -72,7 +72,7 @@ def test_unknown_fragment_parameter_fails() -> None:
     "name", ["lock.toml", "pylock.tool-1.2.3.toml", "pylock.toml.bak", ""]
 )
 def test_file_name_must_match_pep_751(name: str) -> None:
-    with pytest.raises(LockRejected, match=r"\[N1\]"):
+    with pytest.raises(LockRejectedError, match=r"\[N1\]"):
         find_lock_url(metadata(f"Pylock, https://h.example/dir/{name}"))
 
 

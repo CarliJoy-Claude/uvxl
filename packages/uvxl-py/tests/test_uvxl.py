@@ -172,7 +172,7 @@ def test_pinned_lock(world: World, out: Path) -> None:
 
 
 # --------------------------------------------------------------------------
-# Refusals: nothing is installed
+# Refused runs, where nothing gets installed
 # --------------------------------------------------------------------------
 
 

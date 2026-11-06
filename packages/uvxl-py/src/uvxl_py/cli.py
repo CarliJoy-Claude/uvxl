@@ -100,7 +100,7 @@ def verify_main(lock: Path, package: str) -> None:
     help="Where environments are kept. Default: $XDG_CACHE_HOME/uvxl or ~/.cache/uvxl.",
 )
 @click.pass_context
-def uvxl_main(  # noqa: PLR0913
+def uvxl_main(
     context: click.Context,
     *,
     command: str,

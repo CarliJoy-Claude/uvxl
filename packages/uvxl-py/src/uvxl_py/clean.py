@@ -26,7 +26,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 
 from uvxl_py.candidates import Candidate, Wheel, parse_candidates, yanked_releases
-from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.lock import LockEntry, lock_environment, parse_lock
 from uvxl_py.root import RootWheel
 from uvxl_py.toml_values import common_verified
@@ -59,15 +59,12 @@ def check_root(candidate: Candidate, root: RootWheel) -> CleanPackage:
     the file URL minus the file name, which only affects its cache key.
     """
     if candidate.version != root.version:
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
         )
-    kept: list[Wheel] = []
-    for wheel in candidate.wheels:
-        if wheel.hashes:
-            kept.append(wheel)
+    kept = [wheel for wheel in candidate.wheels if wheel.hashes]
     if not kept:
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C7] the configured indexes serve no hashed wheel for the root "
             f"{root.name} {root.version}"
         )
@@ -81,16 +78,16 @@ def check_locked(
 ) -> CleanPackage:
     """Rules C5.1 to C5.5 for one package uv needs."""
     if entry is None:
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C5.1] {candidate.name} {candidate.version} is needed but not in the lock"
         )
     if candidate.version != entry.version:
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C5.2] uv selected {candidate.name} {candidate.version}, "
             f"the lock has {entry.version}"
         )
     if index_key(entry.index) not in configured_keys:
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C5.3] the lock names index {entry.index!r} for {entry.name}, "
             "which is not a configured index"
         )
@@ -102,7 +99,7 @@ def check_locked(
                 kept.append(replace(wheel, hashes=verified))
                 break
     if not kept:
-        raise LockRejected(
+        raise LockRejectedError(
             f"[C5.4] no file of {entry.name} {entry.version} served by the "
             "configured indexes matches the lock"
         )
@@ -166,7 +163,9 @@ def clean_root(
     packages: list[CleanPackage] = []
     for candidate in candidates:
         if (candidate.name, candidate.version) in yanked:
-            raise LockRejected(f"[C5.4] {candidate.name} {candidate.version} is yanked")
+            raise LockRejectedError(
+                f"[C5.4] {candidate.name} {candidate.version} is yanked"
+            )
         if candidate.name == root.name:
             packages.append(check_root(candidate, root))
         else:

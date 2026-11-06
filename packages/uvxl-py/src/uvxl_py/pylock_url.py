@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Final
 from urllib.parse import unquote, urlsplit
 
-from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.lock import is_pylock_name
 from uvxl_py.toml_values import SUPPORTED_HASHES
 
@@ -60,7 +60,7 @@ def parse_fragment(fragment: str) -> Mapping[str, str]:
     for parameter in fragment.split("&"):
         key, _, value = parameter.partition("=")
         if key.lower() not in SUPPORTED_HASHES:
-            raise LockRejected(
+            raise LockRejectedError(
                 f"[M4] unknown fragment parameter {parameter!r} in the Pylock URL"
             )
         pinned[key.lower()] = value.lower()
@@ -78,24 +78,24 @@ def find_lock_url(
     """
     urls = tuple(url for label, url in project_urls(metadata) if is_pylock(label))
     if not urls:
-        raise LockRejected(
+        raise LockRejectedError(
             "[M5] the root has no Pylock Project-URL; a locked install is impossible"
         )
     if len(urls) > 1:
-        raise LockRejected(f"[M2] the root declares {len(urls)} Pylock URLs")
+        raise LockRejectedError(f"[M2] the root declares {len(urls)} Pylock URLs")
     parts = urlsplit(urls[0])
     if allow_http:
         allowed: tuple[str, ...] = ("https", "http")
     else:
         allowed = ("https",)
     if parts.scheme.lower() not in allowed or not parts.hostname:
-        raise LockRejected(f"[M3] the Pylock URL must be https: {urls[0]!r}")
+        raise LockRejectedError(f"[M3] the Pylock URL must be https: {urls[0]!r}")
     lock_url = LockUrl(
         url=parts._replace(fragment="").geturl(),
         pinned=parse_fragment(parts.fragment),
     )
     if not is_pylock_name(lock_url.file_name):
-        raise LockRejected(
+        raise LockRejectedError(
             f"[N1] {lock_url.file_name!r} in the Pylock URL is not a valid "
             "PEP 751 file name"
         )

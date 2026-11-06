@@ -43,7 +43,7 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def build_wheel(  # noqa: PLR0913
+def build_wheel(
     directory: Path,
     name: str,
     version: str,
@@ -118,7 +118,7 @@ class FakeIndex:
         index = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: object) -> None:
+            def log_message(self, message_format: str, *args: object) -> None:
                 return
 
             def reply(self, body: bytes, content_type: str) -> None:

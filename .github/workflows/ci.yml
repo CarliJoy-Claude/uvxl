@@ -27,14 +27,12 @@ env:
 
 jobs:
   # ------------------------------------------------------------------------
-  # All prek hooks: ruff, mypy, cargo fmt/clippy/test, pytest with Python
-  # coverage (100%) and Rust coverage of an instrumented uvxl-rs.
+  # prek groups `lint` and `test` (.pre-commit-config.yaml), as run locally:
+  # ruff, mypy, cargo fmt/clippy/test, pytest with Python coverage (100%)
+  # and Rust coverage of an instrumented uvxl-rs.
   # ------------------------------------------------------------------------
   checks:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash # -eo pipefail: a failing pytest is not hidden by `tee`
     env:
       # The hooks call `uv run`; the environment is installed once below.
       UV_NO_SYNC: "1"
@@ -56,24 +54,14 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-      # uvxl-rs comes from the instrumented build of the coverage hook, so the
+      # uvxl-rs comes from the instrumented build of the tests hook, so the
       # release build is not needed here.
       - run: uv sync --locked --no-install-package uvxl-rs
-      - name: Lint and type checks (prek, without the test hooks)
-        run: uv run prek run --all-files --show-diff-on-failure
-        env:
-          SKIP: tests,coverage-report # run as visible steps below
-      - name: pytest (Python and Rust coverage)
-        run: |
-          uv run coverage erase
-          scripts/rust-coverage.sh coverage run -m pytest -ra --junitxml=junit.xml | tee rust-coverage.txt
-      - name: Python coverage report
-        if: always()
-        run: |
-          uv run coverage combine
-          uv run coverage html --fail-under=0
-          uv run coverage xml --fail-under=0
-          uv run coverage report | tee python-coverage.txt
+      - name: prek group lint
+        run: uv run prek run --all-files --show-diff-on-failure --group lint
+      - name: prek group test
+        if: success() || failure()
+        run: uv run prek run --all-files --group test
       - name: Job summary
         if: always()
         run: |
@@ -102,7 +90,8 @@ jobs:
           if-no-files-found: ignore
 
   # ------------------------------------------------------------------------
-  # Distributions: sdists and pure wheels, and uvxl-rs wheels per platform.
+  # Distributions: prek group `build` (sdists and pure wheels), and uvxl-rs
+  # wheels per platform (maturin-action, as prek cannot cross-compile).
   # ------------------------------------------------------------------------
   build-pure:
     runs-on: ubuntu-latest
@@ -116,9 +105,9 @@ jobs:
       - name: Set the uvxl-rs version from the tag
         if: inputs.version != ''
         run: uv run --no-project python scripts/set-rust-version.py "${{ inputs.version }}"
-      - run: uv build --package uvxl --out-dir dist
-      - run: uv build --package uvxl-py --out-dir dist
-      - run: uv build --package uvxl-rs --sdist --out-dir dist
+      # Only the dev group (prek): the workspace packages are not needed.
+      - name: prek group build
+        run: uv run --locked --only-group dev prek run --all-files --group build
       - uses: actions/upload-artifact@v7
         with:
           name: dist-pure
@@ -190,19 +179,10 @@ jobs:
         with:
           name: dist-rust-${{ matrix.wheel }}
           path: dist
-      - name: Install the built wheels and the test tools
-        shell: bash
-        run: |
-          uv venv --python "${{ matrix.python }}"
-          uv pip install dist/uvxl-*.whl dist/uvxl_py-*.whl dist/uvxl_rs-*.whl
-          uv pip install pytest tomli-w
-      - name: The wheels are what is installed
-        shell: bash
-        run: |
-          uv pip list
-          uv run --no-sync python -c "import uvxl, uvxl_py; print(uvxl.__file__, uvxl_py.__file__)"
-          uv run --no-sync python -c "import uvxl; assert uvxl.find_rust(), 'uvxl-rs missing'"
-          uv run --no-sync uvxl --help
-          uv run --no-sync pylock-verify --help
-      - name: pytest (against the installed wheels)
-        run: uv run --no-sync pytest -ra
+      # prek runs from a dev group environment; the hook installs the wheels
+      # into an environment of its own.
+      - name: prek hook test-wheels
+        shell: bash # Git Bash on Windows, so the hook finds it, not WSL's bash
+        env:
+          UV_PYTHON: ${{ matrix.python }} # the dev and the test environment
+        run: uv run --locked --only-group dev prek run --all-files --stage manual test-wheels

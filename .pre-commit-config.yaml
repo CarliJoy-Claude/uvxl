@@ -1,5 +1,15 @@
-# Run with `uv run prek run --all-files` (prek reads this pre-commit format).
-# CI runs the same hooks in the checks job.
+# prek hooks (pre-commit format), one definition for local runs and CI.
+#
+# Groups (select with `prek run --group NAME`), each a CI job or step:
+#   lint    format, lint, type checks             (ci.yml: checks)
+#   test    Rust unit tests, pytest, coverage     (ci.yml: checks)
+#   build   sdists and pure wheels into dist/     (ci.yml: build-pure)
+#   wheels  the suite against the built wheels    (ci.yml: test-wheels),
+#           manual stage, as it builds uvxl-rs in release mode
+#
+# Locally:
+#   uv run prek run --all-files                                 # lint, build, test
+#   uv run prek run --all-files --stage manual --group wheels   # build, test wheels
 repos:
   - repo: local
     hooks:
@@ -8,42 +18,49 @@ repos:
         entry: uv run ruff format .
         language: system
         pass_filenames: false
+        groups: [lint]
 
       - id: ruff-fix
         name: ruff fix
         entry: uv run ruff check --fix --quiet --exit-zero .
         language: system
         pass_filenames: false
+        groups: [lint]
 
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check .
         language: system
         pass_filenames: false
+        groups: [lint]
 
       - id: mypy
         name: mypy
         entry: uv run mypy
         language: system
         pass_filenames: false
+        groups: [lint]
 
       - id: cargo-fmt
         name: cargo fmt
         entry: cargo fmt --manifest-path packages/uvxl-rs/Cargo.toml --check
         language: system
         pass_filenames: false
+        groups: [lint]
 
       - id: cargo-clippy
         name: cargo clippy
         entry: cargo clippy --manifest-path packages/uvxl-rs/Cargo.toml --all-targets -- -D warnings
         language: system
         pass_filenames: false
+        groups: [lint]
 
       - id: cargo-test
         name: cargo test (Rust unit tests)
         entry: cargo test --manifest-path packages/uvxl-rs/Cargo.toml
         language: system
         pass_filenames: false
+        groups: [test]
 
       # Test the commands' entry points (imports are correct)
       - id: test-cli
@@ -51,26 +68,70 @@ repos:
         entry: bash -c 'uv run uvxl --help > /dev/null && uv run uvxl-py --help > /dev/null'
         language: system
         pass_filenames: false
+        groups: [test]
 
       # All tests once: Python coverage data, and Rust coverage of an
       # instrumented uvxl-rs (gated at 100% for the PoC's own Rust code).
+      # junit.xml and rust-coverage.txt feed CI's reports and job summary.
       - id: tests
         name: pytest (Python and Rust coverage)
-        entry: bash -c 'uv run coverage erase && scripts/rust-coverage.sh coverage run -m pytest -q'
+        entry: >
+          bash -c
+          'set -o pipefail &&
+           uv run coverage erase &&
+           scripts/rust-coverage.sh coverage run -m pytest -ra --junitxml=junit.xml | tee rust-coverage.txt'
         language: system
+        verbose: true
         pass_filenames: false
         require_serial: true
+        groups: [test]
 
       # Combine + always output coverage + always generate HTML + enforce minimum
       - id: coverage-report
         name: coverage (combine, html, report, fail-under)
         entry: >
           bash -c
-          'uv run coverage combine &&
+          'set -o pipefail &&
+           uv run coverage combine &&
            uv run coverage html --fail-under=0 &&
            uv run coverage xml --fail-under=0 &&
-           uv run coverage report'
+           uv run coverage report | tee python-coverage.txt'
         language: system
         verbose: true
         pass_filenames: false
         require_serial: true
+        groups: [test]
+
+      # dist/ is rebuilt from scratch, so it holds one version only.
+      - id: build
+        name: build sdists and pure wheels (dist/)
+        entry: >
+          bash -c
+          'rm -rf dist &&
+           uv build --package uvxl --out-dir dist &&
+           uv build --package uvxl-py --out-dir dist &&
+           uv build --package uvxl-rs --sdist --out-dir dist'
+        language: system
+        pass_filenames: false
+        require_serial: true
+        groups: [build, wheels]
+
+      # CI builds the uvxl-rs wheels per platform with maturin-action instead.
+      - id: build-rust-wheel
+        name: build the uvxl-rs wheel for this platform (dist/)
+        entry: uv build --package uvxl-rs --wheel --out-dir dist
+        language: system
+        pass_filenames: false
+        require_serial: true
+        stages: [manual]
+        groups: [wheels]
+
+      - id: test-wheels
+        name: pytest against the built wheels (fresh environment)
+        entry: bash scripts/test-wheels.sh
+        language: system
+        verbose: true
+        pass_filenames: false
+        require_serial: true
+        stages: [manual]
+        groups: [wheels]

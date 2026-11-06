@@ -174,7 +174,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 uv has no Python API (the PyPI `uv` package only ships the binary), so the PoC drives the CLI:
 
 1. Python parses the lock with `tomllib` and checks N1, C1 to C4.
-2. `uv pip compile - --constraints /dev/fd/N --python <target> --format pylock.toml --only-binary :all: --no-header`: the root requirement (`app[extras]==version`) on stdin, the lock's pins (`name==version` lines) through a pipe. Constraints never add packages, which gives C5 and C6 for free.
+2. `uv pip compile - --constraints <tmp>/constraints.txt --python <target> --format pylock.toml --only-binary :all: --no-header`: the root requirement (`app[extras]==version`) on stdin, the lock's pins (`name==version` lines) in a temp file. Constraints never add packages, which gives C5 and C6 for free.
 3. Python parses uv's candidate pylock and checks it against the lock: every package must be locked with the same version (C5.1, C5.2), the lock's `index` must be a configured index (C5.3), only wheels whose hash the lock lists are kept (C5.4, C5.5), and the root must hash-match the given wheel (C7).
 4. A second `uv pip compile --no-deps --emit-index-url --format requirements.txt` lists the configured indexes (that flag only works in requirements format).
 5. The cleaned lock is written with `tomli_w`; with `--install`, a temp `pylock.toml` is installed with `uv pip install -r`.
@@ -207,7 +207,6 @@ Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is
 Open:
 - `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
 - Windows:
-  - `Uv.compile` passes constraints through `os.pipe`, `pass_fds` and `/dev/fd/N`: use a temp constraints file instead.
   - Virtual environments use `Scripts\python.exe` and `Scripts\<command>.exe` instead of `bin/` (`Uv.create_venv`, `environments.py`).
   - Tests: `fresh_venv` uses `bin/python`.
 

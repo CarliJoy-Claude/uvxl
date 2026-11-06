@@ -1,14 +1,12 @@
 """Running the uv CLI, and querying the target interpreter.
 
-uv has no Python API, so the PoC drives the CLI. Constraints go to uv through
-a pipe passed as ``/dev/fd/N`` and never touch the disk. POSIX only.
+uv has no Python API, so the PoC drives the CLI.
 """
 
 import json
-import os
 import shutil
 import subprocess
-import threading
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,18 +43,6 @@ print(json.dumps({
 """
 
 
-def _feed_pipe(fd: int, data: bytes) -> None:
-    try:
-        view = memoryview(data)
-        while view:
-            written = os.write(fd, view)
-            view = view[written:]
-    except BrokenPipeError:
-        pass  # uv exited early; its error is reported through the exit code
-    finally:
-        os.close(fd)
-
-
 def without_noise(stderr: str) -> str:
     lines = tuple(line for line in stderr.splitlines() if "UV_NATIVE_TLS" not in line)
     return "\n".join(lines).strip()
@@ -79,49 +65,38 @@ class Uv:
     def compile(
         self, requirement: str, constraints: str, options: Sequence[str]
     ) -> CompileOutput:
-        """Run ``uv pip compile -`` with constraints passed through a pipe."""
-        read_fd, write_fd = os.pipe()
-        command = (
-            self.executable,
-            "pip",
-            "compile",
-            "-",
-            "--constraints",
-            f"/dev/fd/{read_fd}",
-            "--python",
-            self.python,
-            "--no-header",
-            *options,
-            *self.extra_args,
-        )
-        try:
-            process = subprocess.Popen(
-                command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                pass_fds=(read_fd,),
-                text=True,
+        """Run ``uv pip compile -``: the requirement on stdin, constraints in a file."""
+        with tempfile.TemporaryDirectory(prefix="uvlx-") as directory:
+            constraints_file = Path(directory) / "constraints.txt"
+            constraints_file.write_text(constraints, encoding="utf-8")
+            command = (
+                self.executable,
+                "pip",
+                "compile",
+                "-",
+                "--constraints",
+                str(constraints_file),
+                "--python",
+                self.python,
+                "--no-header",
+                *options,
+                *self.extra_args,
             )
-        except OSError as error:
-            os.close(write_fd)
-            raise UvError(f"cannot run {self.executable}: {error}") from error
-        finally:
-            os.close(read_fd)
-        writer = threading.Thread(
-            target=_feed_pipe, args=(write_fd, constraints.encode()), daemon=True
-        )
-        writer.start()
-        stdout, stderr = process.communicate(requirement + "\n")
-        writer.join()
-        stderr = without_noise(stderr)
+            process = subprocess.run(
+                command,
+                input=requirement + "\n",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        stderr = without_noise(process.stderr)
         if process.returncode != 0:
             if "No solution found" in stderr:
                 raise LockRejected(
                     "[C5] uv finds no resolution within the lock's pins:\n" + stderr
                 )
             raise UvError(f"uv pip compile failed:\n{stderr}")
-        return CompileOutput(stdout, stderr)
+        return CompileOutput(process.stdout, stderr)
 
     def install(self, lock: Path) -> None:
         """Rule C8: install a cleaned lock; uv enforces its hashes."""

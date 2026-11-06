@@ -13,8 +13,8 @@ from pathlib import Path
 
 import tomli_w
 
-import uvxl
-from uvxl.root import parse_root_request, select_root
+import uvxl_py
+from uvxl_py.root import parse_root_request, select_root
 
 UV = shutil.which("uv")
 
@@ -213,12 +213,12 @@ class World:
     directory: Path
     wheels: Mapping[str, Path]
 
-    def uv(self, index_url: str | None = None) -> uvxl.Uv:
+    def uv(self, index_url: str | None = None) -> uvxl_py.Uv:
         assert UV is not None
         url = index_url
         if url is None:
             url = self.index.url
-        return uvxl.Uv(UV, sys.executable, ("--index-url", url))
+        return uvxl_py.Uv(UV, sys.executable, ("--index-url", url))
 
     def wheel_tables(self, name: str) -> list[dict[str, object]]:
         return [
@@ -283,18 +283,18 @@ class World:
         lock: Path,
         extras: Sequence[str] = (),
         index_url: str | None = None,
-    ) -> uvxl.CleanResult:
+    ) -> uvxl_py.CleanResult:
         """Verify and clean ``lock`` for ``app``, chosen by uv from the index."""
         uv = self.uv(index_url)
         root = select_root(uv, parse_root_request("app"))
-        return uvxl.clean_root(root, lock.name, lock.read_bytes(), uv, extras)
+        return uvxl_py.clean_root(root, lock.name, lock.read_bytes(), uv, extras)
 
     def clean(
         self,
         entries: Sequence[Mapping[str, object]],
         extras: Sequence[str] = (),
         index_url: str | None = None,
-    ) -> uvxl.CleanResult:
+    ) -> uvxl_py.CleanResult:
         return self.clean_file(self.write_lock(entries), extras, index_url)
 
     def requested(self) -> tuple[str, ...]:

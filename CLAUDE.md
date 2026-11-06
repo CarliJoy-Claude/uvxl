@@ -143,7 +143,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 └── packages/
     ├── uvxl-py/                # Python PoC (first)
     │   ├── pyproject.toml      # build backend: uv_build (or hatchling)
-    │   ├── src/uvxl/
+    │   ├── src/uvxl_py/
     │   └── tests/
     └── uvxl-rs/                # Rust PoC (later), built as a wheel with maturin (bindings = "bin")
         ├── pyproject.toml
@@ -152,7 +152,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 ```
 
 - Root `pyproject.toml`: `[tool.uv.workspace] members = ["packages/*"]`, plus `[dependency-groups] dev = [...]` (ruff, mypy, pytest, maturin later) and shared `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`.
-- Names are provisional: distribution `uvxl-py`, import package `uvxl`, console scripts `uvxl` and `pylock-verify`.
+- Names are provisional: distribution `uvxl-py`, import package `uvxl_py`, console scripts `uvxl-py` and `pylock-verify`; the meta package `uvxl` provides the `uvxl` command.
   The Rust wheel must not clash: distribution `uvxl-rs`, binary name to decide (for example `uvxl-rs` until one wins).
 - Dependencies are declared **only** in each package's `pyproject.toml`. No PEP 723 headers in package code (the earlier single-file script declared them twice; that was a mistake).
 - Rust PoC: maturin with `bindings = "bin"` turns the binary into a wheel, so `uv tool install` and `uvx` can use it. The uv crates are on crates.io (0.0.98 matched uv 0.13.6) but are "internal component crates" with no stability promise: pin one exact version family. uv pins Rust 1.99 in its `rust-toolchain.toml`.
@@ -161,9 +161,9 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 ### 5.1 Existing code (migrated 2026-11-05, `uvxl` added 2026-11-05, simplified 2026-11-06)
 
-- The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvxl-py/src/uvxl/`, split into modules:
+- The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvxl-py/src/uvxl_py/`, split into modules:
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
-- Added for `uvxl`: `root` (uv picks the root, `RootWheel` from METADATA, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify` = `uvxl.cli:verify_main`, `uvxl` = `uvxl.cli:uvxl_main`).
+- Added for `uvxl`: `root` (uv picks the root, `RootWheel` from METADATA, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify` = `uvxl_py.cli:verify_main`, `uvxl-py` = `uvxl_py.cli:uvxl_main`).
 - CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
 - Tests in `packages/uvxl-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvxl.py`. All passing with uv 0.13.7.
 - An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.

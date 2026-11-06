@@ -1,6 +1,6 @@
 """Verify and clean (spec section 3.4), with the uv CLI as the engine.
 
-1. The lock is checked on its own (N1, C1 to C4, see ``uvxl.lock``).
+1. The lock is checked on its own (N1, C1 to C4, see ``uvxl_py.lock``).
 2. ``uv pip compile`` resolves the root requirement against the configured
    indexes, with the lock's pins as constraints. Constraints never add
    packages, so lock entries nobody needs are never looked up (C5, C6).
@@ -25,13 +25,13 @@ import tomli_w
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvxl.candidates import Candidate, Wheel, parse_candidates, yanked_releases
-from uvxl.errors import LockRejected, VerifyError
-from uvxl.lock import LockEntry, lock_environment, parse_lock
-from uvxl.root import RootWheel
-from uvxl.toml_values import common_verified
-from uvxl.urls import IndexKey, index_key, strip_user_info
-from uvxl.uv import Uv, marker_environment
+from uvxl_py.candidates import Candidate, Wheel, parse_candidates, yanked_releases
+from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.lock import LockEntry, lock_environment, parse_lock
+from uvxl_py.root import RootWheel
+from uvxl_py.toml_values import common_verified
+from uvxl_py.urls import IndexKey, index_key, strip_user_info
+from uvxl_py.uv import Uv, marker_environment
 
 INDEX_LINE_RE: Final = re.compile(r"^--(?:index-url|extra-index-url)\s+(\S+)\s*$")
 CREATED_BY: Final = "pylock-verify-clean"

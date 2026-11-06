@@ -15,8 +15,8 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvxl.errors import VerifyError
-from uvxl.uv import Uv
+from uvxl_py.errors import VerifyError
+from uvxl_py.uv import Uv
 
 
 @dataclass(frozen=True, slots=True)

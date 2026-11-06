@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Final
 
-from uvxl.errors import LockRejected
+from uvxl_py.errors import LockRejected
 
 SUPPORTED_HASHES: Final = ("sha256", "sha384", "sha512")
 

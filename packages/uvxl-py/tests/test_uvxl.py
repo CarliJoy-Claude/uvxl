@@ -12,8 +12,8 @@ import pytest
 from click.testing import CliRunner, Result
 
 from helpers import UV, FakeIndex, ServedFile, World, build_wheel
-from uvxl.cli import uvxl_main
-from uvxl.fetch import FetchPolicy
+from uvxl_py.cli import uvxl_main
+from uvxl_py.fetch import FetchPolicy
 
 pytestmark = pytest.mark.skipif(UV is None, reason="uv is not installed")
 

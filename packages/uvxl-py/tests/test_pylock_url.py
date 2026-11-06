@@ -3,9 +3,9 @@
 import httpx2
 import pytest
 
-from uvxl.errors import LockRejected, VerifyError
-from uvxl.fetch import FetchPolicy, https_only
-from uvxl.pylock_url import find_lock_url, normalize_label
+from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.fetch import FetchPolicy, https_only
+from uvxl_py.pylock_url import find_lock_url, normalize_label
 
 HEX = "ab" * 32
 

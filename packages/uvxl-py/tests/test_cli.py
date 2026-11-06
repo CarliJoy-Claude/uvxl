@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from helpers import World
-from uvxl.cli import verify_main
+from uvxl_py.cli import verify_main
 
 
 def verify(lock: Path, package: str = "app") -> Result:

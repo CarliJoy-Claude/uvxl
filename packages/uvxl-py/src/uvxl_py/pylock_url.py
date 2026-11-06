@@ -9,9 +9,9 @@ from types import MappingProxyType
 from typing import Final
 from urllib.parse import unquote, urlsplit
 
-from uvxl.errors import LockRejected, VerifyError
-from uvxl.lock import is_pylock_name
-from uvxl.toml_values import SUPPORTED_HASHES
+from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.lock import is_pylock_name
+from uvxl_py.toml_values import SUPPORTED_HASHES
 
 LABEL: Final = "pylock"
 

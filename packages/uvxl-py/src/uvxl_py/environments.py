@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from uvxl.fetch import FetchedLock
-from uvxl.root import RootWheel
-from uvxl.uv import Uv
+from uvxl_py.fetch import FetchedLock
+from uvxl_py.root import RootWheel
+from uvxl_py.uv import Uv
 
 RECEIPT_NAME: Final = "uvxl-receipt.json"
 LOCK_NAME: Final = "pylock.uvxl.toml"

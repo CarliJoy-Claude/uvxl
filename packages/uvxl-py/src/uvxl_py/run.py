@@ -1,22 +1,22 @@
 """``uvxl``: run a package with the lock linked from its metadata.
 
-1. Pick the root wheel and read its METADATA (``uvxl.root``, F7).
-2. Find the ``Pylock`` URL (``uvxl.pylock_url``, M1 to M5, N1).
-3. Fetch the lock, without credentials (``uvxl.fetch``, F4 to F6).
-4. Verify and clean it for this root (``uvxl.clean``, C1 to C7).
+1. Pick the root wheel and read its METADATA (``uvxl_py.root``, F7).
+2. Find the ``Pylock`` URL (``uvxl_py.pylock_url``, M1 to M5, N1).
+3. Fetch the lock, without credentials (``uvxl_py.fetch``, F4 to F6).
+4. Verify and clean it for this root (``uvxl_py.clean``, C1 to C7).
 5. Install the cleaned lock into a cached environment, with a receipt
-   (``uvxl.environments``, C8, P1).
+   (``uvxl_py.environments``, C8, P1).
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from uvxl.clean import clean_root, render
-from uvxl.environments import LockedEnvironment, ensure_environment
-from uvxl.fetch import FetchedLock, FetchPolicy, fetch_lock
-from uvxl.pylock_url import find_lock_url
-from uvxl.root import RootRequest, RootWheel, select_root
-from uvxl.uv import Uv
+from uvxl_py.clean import clean_root, render
+from uvxl_py.environments import LockedEnvironment, ensure_environment
+from uvxl_py.fetch import FetchedLock, FetchPolicy, fetch_lock
+from uvxl_py.pylock_url import find_lock_url
+from uvxl_py.root import RootRequest, RootWheel, select_root
+from uvxl_py.uv import Uv
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,7 +15,7 @@ from typing import Final
 
 import packaging
 
-from uvxl.errors import LockRejected, VerifyError
+from uvxl_py.errors import LockRejected, VerifyError
 
 PACKAGING_PATH: Final = str(Path(packaging.__file__).parent.parent)
 

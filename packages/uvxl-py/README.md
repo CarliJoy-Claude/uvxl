@@ -14,10 +14,10 @@ pylock-verify LOCK PACKAGE
 Checks, before publishing, that LOCK only has entries a locked install accepts: registry wheels and sdists with hashes, version and index, plus one directory entry for PACKAGE itself (as `uv export` writes it).
 Exit codes: 0 ok, 1 error, 2 usage error.
 
-## `uvxl`
+## `uvxl-py`
 
 ```
-uvxl [--from REQ] [--python X] [--uv-arg ARG] [--cache-dir DIR] COMMAND [ARGS]...
+uvxl-py [--from REQ] [--python X] [--uv-arg ARG] [--cache-dir DIR] COMMAND [ARGS]...
 ```
 
 Runs COMMAND like `uvx`, from an environment installed with the lock the root package links through its `Pylock` Project-URL.

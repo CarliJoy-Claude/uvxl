@@ -12,8 +12,8 @@ from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvxl.errors import LockRejected
-from uvxl.toml_values import (
+from uvxl_py.errors import LockRejected
+from uvxl_py.toml_values import (
     expect_mapping,
     expect_sequence,
     expect_str,

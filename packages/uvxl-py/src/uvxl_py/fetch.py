@@ -16,8 +16,8 @@ from typing import Final
 
 import httpx2
 
-from uvxl.errors import LockRejected, VerifyError
-from uvxl.pylock_url import LockUrl
+from uvxl_py.errors import LockRejected, VerifyError
+from uvxl_py.pylock_url import LockUrl
 
 USER_AGENT: Final = "uvxl/0.1"
 TIMEOUT: Final = 30.0

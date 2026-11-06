@@ -1,7 +1,7 @@
 """Reading the candidate pylock that ``uv pip compile`` prints.
 
 This is uv's own output, so it is read without validation. The maintainer's
-lock is the untrusted input; ``uvxl.lock`` checks that one carefully.
+lock is the untrusted input; ``uvxl_py.lock`` checks that one carefully.
 """
 
 import re
@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlsplit
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvxl.toml_values import supported_hashes
+from uvxl_py.toml_values import supported_hashes
 
 YANKED_RE: Final = re.compile(r"`([^`=\s]+)==([^`\s]+)` is yanked")
 

@@ -12,12 +12,12 @@ dependencies = [
 ]
 
 [project.scripts]
-pylock-verify = "uvxl.cli:verify_main"
-uvxl = "uvxl.cli:uvxl_main"
+pylock-verify = "uvxl_py.cli:verify_main"
+uvxl-py = "uvxl_py.cli:uvxl_main"
 
 [build-system]
 requires = ["uv_build>=0.13,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "uvxl"
+module-name = "uvxl_py"

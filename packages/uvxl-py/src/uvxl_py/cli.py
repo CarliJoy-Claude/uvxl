@@ -14,13 +14,13 @@ from pathlib import Path
 
 import click
 
-from uvxl.environments import default_cache_dir
-from uvxl.errors import VerifyError
-from uvxl.fetch import FetchPolicy
-from uvxl.lock import verify_entries
-from uvxl.root import parse_root_request
-from uvxl.run import prepare
-from uvxl.uv import Uv, find_interpreter, find_uv
+from uvxl_py.environments import default_cache_dir
+from uvxl_py.errors import VerifyError
+from uvxl_py.fetch import FetchPolicy
+from uvxl_py.lock import verify_entries
+from uvxl_py.root import parse_root_request
+from uvxl_py.run import prepare
+from uvxl_py.uv import Uv, find_interpreter, find_uv
 
 
 @contextmanager
@@ -66,7 +66,7 @@ def verify_main(lock: Path, package: str) -> None:
 
 
 @click.command(
-    name="uvxl",
+    name="uvxl-py",
     context_settings={
         "allow_interspersed_args": False,
         "help_option_names": ["-h", "--help"],

@@ -3,8 +3,12 @@
 import hashlib
 import http.server
 import json
+import os
+import re
 import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import zipfile
 from collections.abc import Mapping, Sequence
@@ -15,6 +19,7 @@ import tomli_w
 
 import uvxl_py
 from uvxl_py.root import parse_root_request, select_root
+from uvxl_py.venv import executable
 
 UV = shutil.which("uv")
 
@@ -299,3 +304,102 @@ class World:
 
     def requested(self) -> tuple[str, ...]:
         return tuple(path for path, _ in self.index.requests)
+
+
+# --------------------------------------------------------------------------
+# Running uvxl against the fake index
+# --------------------------------------------------------------------------
+
+LOCK_PATH = "/+f/0a1/pylock.toml"
+STATUS_RE = re.compile(
+    r"lock (\S+), environment (?:created: |reused: )?(\S+)\s*$", re.MULTILINE
+)
+
+
+def publish(
+    world: World,
+    *project_urls: str,
+    entries: Sequence[Mapping[str, object]] = (),
+    host: FakeIndex | None = None,
+) -> str:
+    """Host a lock (the good one by default) and publish an app linking it.
+
+    Without ``project_urls`` the app links the hosted lock. Returns its URL.
+    """
+    if host is None:
+        host = world.index
+    lock_entries = entries or world.good_entries()
+    host.extra_files[LOCK_PATH] = world.write_lock(lock_entries).read_bytes()
+    url = host.base() + LOCK_PATH
+    if not project_urls:
+        project_urls = (f"Pylock, {url}",)
+    directory = Path(tempfile.mkdtemp(prefix="app-", dir=world.directory))
+    wheel = build_wheel(
+        directory,
+        "app",
+        "1.0",
+        ["dep-a>=1", "dep-c; extra == 'x'"],
+        extras=["x"],
+        project_urls=project_urls,
+        console_script=True,
+    )
+    world.index.projects["app"] = [ServedFile(wheel)]
+    return url
+
+
+def uvxl(
+    world: World,
+    backend: str,
+    *arguments: str,
+    insecure: bool = True,
+    index_url: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``uvxl`` with the backend. The fake index is plain http."""
+    if index_url is None:
+        index_url = world.index.url
+    options = [
+        "--python",
+        sys.executable,
+        "--index-url",
+        index_url,
+        "--cache-dir",
+        str(world.directory / "uv-cache"),
+    ]
+    if insecure:
+        options.extend(("--allow-insecure-host", "127.0.0.1"))
+    return subprocess.run(
+        (sys.executable, "-m", "uvxl", *options, *arguments),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "UVXL_BACKEND": backend},
+    )
+
+
+def environment_of(result: subprocess.CompletedProcess[str]) -> Path:
+    found = STATUS_RE.search(result.stderr)
+    assert found is not None, result.stderr
+    return Path(found.group(2))
+
+
+def installed(environment: Path) -> frozenset[str]:
+    assert UV is not None
+    listed = subprocess.run(
+        [
+            UV,
+            "pip",
+            "list",
+            "--python",
+            str(executable(environment, "python")),
+            "--format",
+            "json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return frozenset(item["name"] for item in json.loads(listed.stdout))
+
+
+def lock_requests(server: FakeIndex) -> list[str | None]:
+    return [auth for path, auth in server.requests if path == LOCK_PATH]

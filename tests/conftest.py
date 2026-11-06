@@ -38,3 +38,22 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
         yield World(index, tmp_path, wheels)
     finally:
         index.stop()
+
+
+@pytest.fixture
+def out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Where the test wheel's console script writes its arguments."""
+    path = tmp_path / "script-out.txt"
+    monkeypatch.setenv("UVXL_TEST_OUT", str(path))
+    # Environments live in uv's cache, given with --cache-dir below.
+    monkeypatch.delenv("UV_NO_CACHE")
+    return path
+
+
+@pytest.fixture
+def foreign() -> Iterator[FakeIndex]:
+    """A second origin (another port), for tests that need two hosts."""
+    server = FakeIndex()
+    server.start()
+    yield server
+    server.stop()

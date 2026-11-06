@@ -47,3 +47,38 @@ def test_python_backend_sends_no_credentials(world: World, out: Path) -> None:
     assert result.returncode == 1
     assert "[F6]" in result.stderr
     assert lock_requests(world.index) == [None]
+
+
+def test_no_command_is_an_error(world: World, out: Path) -> None:
+    result = uvxl(world, "rust")
+    assert result.returncode == 1
+    assert "no command given" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("served", "message"),
+    [
+        ({"metadata": False}, "no PEP 658 metadata"),
+        ({"metadata_hash": "md5"}, "no usable hash to verify"),
+        ({"hashes": False}, "[C7] the index states no hash"),
+    ],
+)
+def test_root_served_by_a_sloppy_index(
+    world: World, out: Path, served: dict[str, object], message: str
+) -> None:
+    publish(world)
+    (app,) = world.index.projects["app"]
+    for field, value in served.items():
+        setattr(app, field, value)
+    result = uvxl(world, "rust", "app")
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+def test_invalid_pinned_digest_is_m4_in_rust(world: World, out: Path) -> None:
+    # The Python backend reads any digest and fails at F5 instead.
+    url = publish(world)
+    publish(world, f"Pylock, {url}#sha256=zz")
+    result = uvxl(world, "rust", "app")
+    assert result.returncode == 1
+    assert "[M4]" in result.stderr

@@ -185,14 +185,15 @@ def test_lock_file_name_must_match_pep_751(world: World, name: str) -> None:
 
 
 def test_unsupported_lock_version_is_rejected(world: World) -> None:
-    path = world.write_lock(world.good_entries(), **{"lock-version": "2.0"})
+    path = world.write_lock(world.good_entries(), top_level={"lock-version": "2.0"})
     with pytest.raises(uvxl_py.LockRejectedError, match=r"\[C1\]"):
         world.clean_file(path)
 
 
 def test_lock_that_excludes_this_environment_is_rejected(world: World) -> None:
     path = world.write_lock(
-        world.good_entries(), environments=["sys_platform == 'nonexistent'"]
+        world.good_entries(),
+        top_level={"environments": ["sys_platform == 'nonexistent'"]},
     )
     with pytest.raises(uvxl_py.LockRejectedError, match=r"\[C1\]"):
         world.clean_file(path)
@@ -214,14 +215,16 @@ def test_requires_python_of_the_lock(
     world: World, requires_python: str, message: str
 ) -> None:
     path = world.write_lock(
-        world.good_entries(), **{"requires-python": requires_python}
+        world.good_entries(), top_level={"requires-python": requires_python}
     )
     with pytest.raises(uvxl_py.LockRejectedError, match=message):
         world.clean_file(path)
 
 
 def test_lock_covering_this_python_is_accepted(world: World) -> None:
-    path = world.write_lock(world.good_entries(), **{"requires-python": ">=3.8"})
+    path = world.write_lock(
+        world.good_entries(), top_level={"requires-python": ">=3.8"}
+    )
     assert "dep-a" in names(world.clean_file(path))
 
 

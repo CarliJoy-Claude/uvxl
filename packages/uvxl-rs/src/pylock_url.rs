@@ -8,7 +8,7 @@ use uv_pypi_types::{HashAlgorithm, HashDigest};
 use uv_redacted::SafeUrl;
 
 /// Where the lock is, and the pinned hashes (empty in mutable mode).
-#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub(crate) struct LockUrl {
     pub(crate) url: Url,
     pub(crate) pinned: Vec<HashDigest>,

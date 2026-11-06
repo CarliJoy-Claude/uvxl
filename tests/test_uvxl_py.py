@@ -93,21 +93,6 @@ def test_cleaned_lock_keeps_all_served_root_wheels(world: World, out: Path) -> N
     )
 
 
-@pytest.mark.parametrize(
-    ("requirement", "message"),
-    [
-        ("app[", "invalid requirement"),
-        ("app @ https://x.invalid/app.whl", "only a name, extras and a version"),
-    ],
-)
-def test_invalid_from_is_an_error(
-    world: World, out: Path, requirement: str, message: str
-) -> None:
-    result = uvxl_py(world, "--from", requirement, "app")
-    assert result.exit_code == 1
-    assert message in result.stderr
-
-
 def test_without_python_option_uv_picks_the_interpreter(
     world: World, out: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

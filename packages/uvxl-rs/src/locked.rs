@@ -36,7 +36,7 @@ use uv_redacted::SafeUrl;
 use uv_requirements::RequirementsSpecification;
 use uv_resolver::{DependencyMode, ResolverOutput};
 
-use crate::glue::{Context, registry_client, resolve};
+use crate::glue::{Context, registry_client, registry_dists, resolve};
 use crate::lock::{LockEntry, common_verified, parse_lock};
 use crate::pylock_url::{LockUrl, find_lock_url};
 
@@ -62,8 +62,18 @@ pub(crate) async fn run(context: Context<'_>) -> Result<ExitStatus> {
     };
     let command = command.to_string_lossy().into_owned();
     let from = args.from.clone().unwrap_or_else(|| command.clone());
-    let requested = uv_pep508::Requirement::<VerbatimParsedUrl>::from_str(&from)
-        .with_context(|| format!("invalid requirement {from:?}"))?;
+    let requested = match uv_pep508::Requirement::<VerbatimParsedUrl>::from_str(&from) {
+        Ok(requested) => requested,
+        Err(err) => bail!("invalid requirement {from:?}: {err}"),
+    };
+    // As in the Python backend: the root comes from the configured indexes.
+    if matches!(
+        requested.version_or_url,
+        Some(uv_pep508::VersionOrUrl::Url(_))
+    ) || !requested.marker.is_true()
+    {
+        bail!("{from:?}: only a name, extras and a version specifier are allowed");
+    }
     let executable = if args.from.is_some() {
         command.clone()
     } else {
@@ -97,12 +107,7 @@ pub(crate) async fn run(context: Context<'_>) -> Result<ExitStatus> {
     let interpreter = CachedEnvironment::base_interpreter(&interpreter, &context.cache)?;
     let state = PlatformState::default();
     let settings = &args.settings.resolver;
-    let client = registry_client(
-        settings,
-        &context.client_builder,
-        &interpreter,
-        &context.cache,
-    )?;
+    let client = registry_client(&context, &interpreter)?;
 
     // 1. uv picks the root (F7).
     let root_spec = format!("{}{}", requested.name, version_part(&requested));
@@ -159,7 +164,7 @@ pub(crate) async fn run(context: Context<'_>) -> Result<ExitStatus> {
     )
     .await
     .context("[C5] uv finds no resolution within the lock's pins")?;
-    let resolution = checked_resolution(output, &requested.name, &root_version, &lock, settings)?;
+    let resolution = checked_resolution(output, &requested.name, &lock, settings)?;
 
     // 5. Install (hashes verified by uv) and run.
     let environment = CachedEnvironment::from_locked_resolution(
@@ -197,8 +202,7 @@ pub(crate) async fn run(context: Context<'_>) -> Result<ExitStatus> {
     }
     let handle = tokio::process::Command::new(&path)
         .args(command_args.iter().map(OsString::as_os_str))
-        .spawn()
-        .with_context(|| format!("cannot run {}", path.display()))?;
+        .spawn()?; // the file exists: checked above
     run_to_completion(handle).await
 }
 
@@ -219,17 +223,13 @@ fn constraint(name: &PackageName, entry: &LockEntry) -> Result<NameRequirementSp
     )))
 }
 
-/// The registry wheel uv chose for `name` (wheels only in the PoC).
+/// The registry wheel uv chose for the root (a `--no-deps` resolution).
 fn registry_wheel(output: ResolverOutput, name: &PackageName) -> Result<RegistryBuiltWheel> {
-    for dist in Resolution::from(output).distributions() {
-        if let ResolvedDist::Installable { dist, .. } = dist
-            && let Dist::Built(BuiltDist::Registry(registry)) = dist.as_ref()
-            && &registry.best_wheel().filename.name == name
-        {
-            return Ok(registry.best_wheel().clone());
-        }
-    }
-    bail!("uv resolved no registry wheel for {name}")
+    registry_dists(output)
+        .into_iter()
+        .map(|registry| registry.best_wheel().clone())
+        .find(|wheel| &wheel.filename.name == name)
+        .context("uv resolved no wheel for the root")
 }
 
 fn content_hash(algorithm: HashAlgorithm, content: &[u8]) -> Option<String> {
@@ -289,9 +289,11 @@ fn covered(url: &url::Url, settings: &uv_settings::ResolverSettings) -> bool {
         .allowed_indexes()
         .iter()
         .any(|index| {
-            let Ok(index_url) = url::Url::parse(index.url().without_credentials().as_str()) else {
-                return false;
-            };
+            let index_url = index
+                .url()
+                .without_credentials()
+                .into_owned()
+                .into_unsafe_url();
             if index_url.origin() != url.origin() {
                 return false;
             }
@@ -343,12 +345,14 @@ async fn fetch_lock(
     String::from_utf8(bytes.to_vec()).context("the lock is not UTF-8")
 }
 
-/// Rules C5.1 to C5.5 and C7: check what uv resolved against the lock and
-/// build the `Resolution` to install, with the verified hashes.
+/// Rules C5.1 and C5.3 to C5.5 and C7: check what uv resolved against the
+/// lock and build the `Resolution` to install, with the verified hashes.
+///
+/// C5.2 (locked version) and the root version hold by construction: uv
+/// resolved `root==version` with the lock's `name==version` pins.
 fn checked_resolution(
     output: ResolverOutput,
     root: &PackageName,
-    root_version: &uv_pep440::Version,
     lock: &HashMap<PackageName, LockEntry>,
     settings: &uv_settings::ResolverSettings,
 ) -> Result<Resolution> {
@@ -356,17 +360,11 @@ fn checked_resolution(
         .index_locations
         .allowed_indexes()
         .iter()
-        .map(|index| index_key(index.url().without_credentials().as_str()))
+        .map(|index| index_key(index.url().without_credentials().as_str()).to_owned())
         .collect();
     let mut graph = DiGraph::new();
     let root_node = graph.add_node(Node::Root);
-    for dist in Resolution::from(output).distributions() {
-        let ResolvedDist::Installable { dist, .. } = dist else {
-            bail!("uv proposes an installed distribution: {dist}");
-        };
-        let Dist::Built(BuiltDist::Registry(registry)) = dist.as_ref() else {
-            bail!("[C5.4] uv proposes a non-wheel distribution: {dist}");
-        };
+    for registry in registry_dists(output) {
         let wheel = registry.best_wheel();
         let (name, version) = (&wheel.filename.name, &wheel.filename.version);
         if wheel
@@ -379,9 +377,6 @@ fn checked_resolution(
         }
         let index_hashes = wheel.file.hashes.as_slice();
         let hashes = if name == root {
-            if version != root_version {
-                bail!("[C7] uv selected {name} {version}, expected {root_version}");
-            }
             if index_hashes.is_empty() {
                 bail!("[C7] the index states no hash for {}", wheel.filename);
             }
@@ -390,13 +385,7 @@ fn checked_resolution(
             let Some(entry) = lock.get(name) else {
                 bail!("[C5.1] {name} {version} is needed but not in the lock");
             };
-            if version != &entry.version {
-                bail!(
-                    "[C5.2] uv selected {name} {version}, the lock has {}",
-                    entry.version
-                );
-            }
-            if !configured.contains(&index_key(&entry.index)) {
+            if !configured.iter().any(|key| key == index_key(&entry.index)) {
                 bail!(
                     "[C5.3] the lock names index {:?} for {name}, which is not a configured index",
                     entry.index
@@ -433,14 +422,9 @@ fn checked_resolution(
     Ok(Resolution::new(graph))
 }
 
-/// Identity of an index URL: no user info, no trailing slash.
-fn index_key(url: &str) -> String {
-    match url::Url::parse(url) {
-        Ok(mut parsed) => {
-            let _ = parsed.set_username("");
-            let _ = parsed.set_password(None);
-            parsed.as_str().trim_end_matches('/').to_owned()
-        }
-        Err(_) => url.trim_end_matches('/').to_owned(),
-    }
+/// Identity of an index URL: the URL without a trailing slash. Configured
+/// indexes are compared without credentials; a lock index with user info
+/// therefore is no configured index (C5.3).
+fn index_key(url: &str) -> &str {
+    url.trim_end_matches('/')
 }

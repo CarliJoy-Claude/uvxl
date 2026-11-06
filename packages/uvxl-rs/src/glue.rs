@@ -10,11 +10,15 @@ use uv_cli::{Cli, Commands, ToolCommand, ToolNamespace};
 use uv_client::{BaseClientBuilder, RegistryClient, RegistryClientBuilder};
 use uv_command_support::{ExitStatus, Printer};
 use uv_configuration::{
-    Concurrency, Constraints, ExtrasSpecification, Reinstall, ToolRunCommand, Upgrade,
+    BuildOptions, Concurrency, Constraints, ExtrasSpecification, NoBinary, NoBuild, Reinstall,
+    ToolRunCommand, Upgrade,
 };
 use uv_dispatch::{BuildDispatch, PlatformState};
 use uv_distribution::LoweredExtraBuildDependencies;
-use uv_distribution_types::{NameRequirementSpecification, UnresolvedRequirementSpecification};
+use uv_distribution_types::{
+    BuiltDist, Dist, NameRequirementSpecification, RegistryBuiltDist, Resolution, ResolvedDist,
+    UnresolvedRequirementSpecification,
+};
 use uv_flags::EnvironmentFlags;
 use uv_preview::Preview;
 use uv_pypi_types::Conflicts;
@@ -139,12 +143,15 @@ fn base_client_builder<'a>(globals: &GlobalSettings) -> BaseClientBuilder<'a> {
 /// COPIED from crates/uv-environment-operations/src/lib.rs
 /// `resolve_environment` (uv 0.13.7).
 pub(crate) fn registry_client(
-    settings: &ResolverSettings,
-    client_builder: &BaseClientBuilder<'_>,
+    context: &Context<'_>,
     interpreter: &Interpreter,
-    cache: &Cache,
 ) -> Result<RegistryClient> {
-    let client_builder = client_builder.clone().keyring(settings.keyring_provider);
+    let settings = &context.args.settings.resolver;
+    let cache = &context.cache;
+    let client_builder = context
+        .client_builder
+        .clone()
+        .keyring(settings.keyring_provider);
     // Determine the PyTorch backend.
     let torch_backend = settings
         .torch_backend
@@ -208,6 +215,9 @@ pub(crate) async fn resolve(
     let cache = &context.cache;
     let preview: Preview = context.globals.preview;
     let build_constraints = Constraints::default();
+    // CHANGED: the configured build options are replaced by wheels only.
+    let _ = build_options;
+    let wheels_only = BuildOptions::new(NoBinary::None, NoBuild::All);
 
     let tags = uv_resolve_operations::resolution_tags(None, None, interpreter)?;
     let marker_environment = uv_resolve_operations::resolution_markers(None, None, interpreter);
@@ -234,7 +244,8 @@ pub(crate) async fn resolve(
         .fork_strategy(*fork_strategy)
         .exclude_newer(exclude_newer.clone())
         .index_strategy(*index_strategy)
-        .build_options(build_options.clone())
+        // CHANGED: wheels only, like `--only-binary :all:` in the Python backend.
+        .build_options(wheels_only.clone())
         // CHANGED: `--no-deps` for the root, as in crates/uv-pip-commands/src/install.rs.
         .dependency_mode(dependency_mode)
         .build();
@@ -275,7 +286,7 @@ pub(crate) async fn resolve(
         &extra_build_requires,
         extra_build_variables,
         *link_mode,
-        build_options,
+        &wheels_only,
         &build_hasher,
         exclude_newer.clone(),
         sources.clone(),
@@ -321,4 +332,19 @@ pub(crate) async fn resolve(
     .await?
     .0)
     // END COPIED
+}
+
+/// The registry wheels uv resolved. The resolver is wheels-only (no builds),
+/// so every resolved distribution is one.
+pub(crate) fn registry_dists(output: ResolverOutput) -> Vec<RegistryBuiltDist> {
+    Resolution::from(output)
+        .distributions()
+        .filter_map(|dist| match dist {
+            ResolvedDist::Installable { dist, .. } => match dist.as_ref() {
+                Dist::Built(BuiltDist::Registry(registry)) => Some(registry.clone()),
+                _ => None,
+            },
+            ResolvedDist::Installed { .. } => None,
+        })
+        .collect()
 }

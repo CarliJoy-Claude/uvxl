@@ -12,8 +12,6 @@ use uv_pep440::{Version, VersionSpecifiers};
 use uv_pep508::{MarkerEnvironment, MarkerTree};
 use uv_pypi_types::{HashAlgorithm, HashDigest};
 
-use crate::pylock_url::is_pylock_name;
-
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct LockFile {
@@ -44,7 +42,6 @@ struct LockFileEntry {
 }
 
 /// One applicable lock entry: the allowlist for one package.
-#[derive(Debug)]
 pub(crate) struct LockEntry {
     pub(crate) version: Version,
     pub(crate) index: String,
@@ -75,11 +72,10 @@ pub(crate) fn parse_lock(
     markers: &MarkerEnvironment,
     extras: &[ExtraName],
 ) -> Result<HashMap<PackageName, LockEntry>> {
-    if !is_pylock_name(file_name) {
-        bail!("[N1] {file_name:?} is not a valid PEP 751 lock file name");
-    }
-    let lock: LockFile =
-        toml::from_str(content).with_context(|| format!("{file_name}: invalid lock"))?;
+    let lock: LockFile = match toml::from_str(content) {
+        Ok(lock) => lock,
+        Err(err) => bail!("{file_name}: invalid TOML: {err}"),
+    };
 
     // C1: supported version, and the lock covers this environment.
     if lock.lock_version != "1.0" {

@@ -139,6 +139,7 @@ def test_root_with_several_wheels(world: World, backend: str, out: Path) -> None
         ),
         (("Pylock, http://127.0.0.1/pylock.toml#future=1",), "[M4]"),
         (("Pylock, http://127.0.0.1/lock.toml",), "[N1]"),
+        (("Pylock, https://",), "[M3]"),
     ],
 )
 def test_pylock_url_rules(
@@ -182,6 +183,8 @@ def test_pinned_hash_mismatch(world: World, backend: str, out: Path) -> None:
         ("missing", "[F6]"),
         ("oversized", "[F4]"),
         ("redirect-loop", "[F4]"),
+        ("unreachable", "[F6]"),
+        ("invalid-toml", "invalid TOML"),
     ],
 )
 def test_fetch_rules(
@@ -192,6 +195,10 @@ def test_fetch_rules(
         publish(world, f"Pylock, {world.index.base()}/nothing/pylock.toml")
     elif setup == "oversized":
         world.index.extra_files[LOCK_PATH] = b"#" * (1024 * 1024 + 1)
+    elif setup == "unreachable":
+        publish(world, "Pylock, http://127.0.0.1:9/pylock.toml")
+    elif setup == "invalid-toml":
+        world.index.extra_files[LOCK_PATH] = b"lock-version = "
     else:
         world.index.redirects["/loop/pylock.toml"] = "/loop/pylock.toml"
         publish(world, f"Pylock, {world.index.base()}/loop/pylock.toml")
@@ -333,3 +340,142 @@ def test_lock_on_another_host(
     result = uvxl(world, backend, "app")
     assert result.returncode == 3, result.stderr
     assert lock_requests(foreign) == [None]
+
+
+# --------------------------------------------------------------------------
+# The lock's own checks (C1 to C4) through both backends
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "top_level",
+    [
+        {"lock-version": "2.0"},
+        {"environments": ["sys_platform == 'nonexistent'"]},
+        {"requires-python": "<3"},
+        {"requires-python": "not a specifier"},
+    ],
+)
+def test_lock_header_rules(
+    world: World, backend: str, out: Path, top_level: dict[str, object]
+) -> None:
+    publish(world)
+    lock = world.write_lock(world.good_entries(), top_level=top_level)
+    world.index.extra_files[LOCK_PATH] = lock.read_bytes()
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 1
+    assert "[C1]" in result.stderr
+
+
+def test_lock_header_that_covers_this_environment(
+    world: World, backend: str, out: Path
+) -> None:
+    publish(world)
+    lock = world.write_lock(
+        world.good_entries(),
+        top_level={
+            "environments": ["python_version >= '3'"],
+            "requires-python": ">=3.8",
+        },
+    )
+    world.index.extra_files[LOCK_PATH] = lock.read_bytes()
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 3, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("change", "rule"),
+    [
+        ({"wheels": []}, "[C3]"),
+        ({"wheels": [{"name": "x.whl"}]}, "[C3]"),
+        ({"version": None}, "[C3]"),
+        ({"index": None}, "[C3]"),
+        ({"marker": "python_version >>> '3'"}, "invalid marker"),
+    ],
+)
+def test_lock_entry_rules(
+    world: World, backend: str, out: Path, change: dict[str, object], rule: str
+) -> None:
+    entry = {
+        k: v for k, v in {**world.entry("dep-b"), **change}.items() if v is not None
+    }
+    publish(world, entries=world.replaced("dep-b", entry))
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 1
+    assert rule in result.stderr
+
+
+def test_two_applicable_entries_are_ambiguous(
+    world: World, backend: str, out: Path
+) -> None:
+    publish(world, entries=(*world.good_entries(), world.entry("dep-b")))
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 1
+    assert "[C4]" in result.stderr
+
+
+def test_more_hash_algorithms_in_the_lock_are_fine(
+    world: World, backend: str, out: Path
+) -> None:
+    data = world.wheels["dep-b"].read_bytes()
+    hashes = {
+        algorithm: hashlib.new(algorithm, data).hexdigest()
+        for algorithm in ("sha256", "sha384", "sha512")
+    }
+    wheel = {"name": world.wheels["dep-b"].name, "hashes": {**hashes, "md5": "x"}}
+    publish(
+        world, entries=world.replaced("dep-b", world.entry("dep-b", wheels=[wheel]))
+    )
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 3, result.stderr
+
+
+def test_lock_index_that_is_no_url_is_no_configured_index(
+    world: World, backend: str, out: Path
+) -> None:
+    entry = world.entry("dep-a", index="not a url")
+    publish(world, entries=world.replaced("dep-a", entry))
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 1
+    assert "[C5.3]" in result.stderr
+
+
+@pytest.mark.parametrize("algorithm", ["sha384", "sha512"])
+def test_pinned_lock_with_other_algorithms(
+    world: World, backend: str, out: Path, algorithm: str
+) -> None:
+    url = publish(world)
+    digest = hashlib.new(algorithm, world.index.extra_files[LOCK_PATH]).hexdigest()
+    publish(world, f"Pylock, {url}#{algorithm}={digest}")
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 3, result.stderr
+
+
+def test_dependency_served_only_as_sdist_finds_no_resolution(
+    world: World, backend: str, out: Path
+) -> None:
+    sdist = world.directory / "dep_b-2.0.tar.gz"
+    sdist.write_bytes(b"not built: wheels only")
+    world.index.projects["dep-b"] = [ServedFile(sdist, metadata=False)]
+    publish(world)
+    result = uvxl(world, backend, "app")
+    assert result.returncode == 1
+    assert "[C5" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("requirement", "message"),
+    [
+        ("app[", "invalid requirement"),
+        ("app @ https://x.invalid/app.whl", "only a name, extras and a version"),
+        ("app; python_version > '3'", "only a name, extras and a version"),
+    ],
+)
+def test_invalid_from_is_an_error(
+    world: World, backend: str, out: Path, requirement: str, message: str
+) -> None:
+    publish(world)
+    result = uvxl(world, backend, "--from", requirement, "app")
+    assert result.returncode == 1
+    assert message in result.stderr
+    assert not out.exists()

@@ -109,6 +109,9 @@ class ServedFile:
     # Like a sloppy index: no hashes or no size on the project page.
     hashes: bool = True
     size: bool = True
+    # The PEP 658 metadata file: announced or not, and its hash algorithm.
+    metadata: bool = True
+    metadata_hash: str = "sha256"
 
 
 @dataclass
@@ -211,8 +214,10 @@ class FakeIndex:
                 "filename": served.path.name,
                 "url": f"/files/{served.path.name}",
                 "hashes": {},
-                "core-metadata": {"sha256": sha256_hex(wheel_metadata(served.path))},
             }
+            if served.metadata:
+                digest = hashlib.new(served.metadata_hash, wheel_metadata(served.path))
+                table["core-metadata"] = {served.metadata_hash: digest.hexdigest()}
             if served.hashes:
                 table["hashes"] = {"sha256": sha256_hex(data)}
             if served.size:
@@ -282,8 +287,11 @@ class World:
         self,
         entries: Sequence[Mapping[str, object]],
         name: str = "pylock.toml",
-        **top_level: object,
+        top_level: Mapping[str, object] | None = None,
     ) -> Path:
+        """Write a lock; ``top_level`` adds or replaces top-level fields."""
+        if top_level is None:
+            top_level = {}
         document: dict[str, object] = {
             "lock-version": "1.0",
             "created-by": "test",

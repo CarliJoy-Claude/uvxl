@@ -56,11 +56,8 @@ def test_pinned_hash_is_parsed_and_removed_from_the_url() -> None:
     assert found.mode == "pinned"
 
 
-@pytest.mark.parametrize(
-    "fragment",
-    ["sha256=abc", "sha256=" + "zz" * 32, "sha256", f"sha256={HEX}&sha256={HEX}"],
-)
-def test_invalid_pins_fail(fragment: str) -> None:
+@pytest.mark.parametrize("fragment", ["md5=abc", f"sha256={HEX}&egg=app"])
+def test_only_hash_parameters_are_allowed(fragment: str) -> None:
     with pytest.raises(LockRejected, match=r"\[M4\]"):
         find_lock_url(metadata(f"Pylock, https://h.example/pylock.toml#{fragment}"))
 

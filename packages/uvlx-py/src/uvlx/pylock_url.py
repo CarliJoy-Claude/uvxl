@@ -1,6 +1,5 @@
 """The ``Pylock`` Project-URL in the root's core metadata (M1 to M5, N1)."""
 
-import re
 import string
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -12,10 +11,9 @@ from urllib.parse import unquote, urlsplit
 
 from uvlx.errors import LockRejected, MetadataError
 from uvlx.lock import is_pylock_name
+from uvlx.toml_values import SUPPORTED_HASHES
 
 LABEL: Final = "pylock"
-HASH_LENGTHS: Final = MappingProxyType({"sha256": 64, "sha384": 96, "sha512": 128})
-HEX_RE: Final = re.compile(r"^[0-9a-f]+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,24 +50,17 @@ def project_urls(metadata: bytes) -> tuple[tuple[str, str], ...]:
 
 
 def parse_fragment(fragment: str) -> Mapping[str, str]:
-    """Rule M4: hash parameters pin the lock; anything else is refused."""
+    """Rule M4: only hash parameters (pinned mode). A bad digest fails F5."""
     pinned: dict[str, str] = {}
     if not fragment:
         return MappingProxyType(pinned)
     for parameter in fragment.split("&"):
-        key, separator, value = parameter.partition("=")
-        key = key.lower()
-        if key not in HASH_LENGTHS:
+        key, _, value = parameter.partition("=")
+        if key.lower() not in SUPPORTED_HASHES:
             raise LockRejected(
                 f"[M4] unknown fragment parameter {parameter!r} in the Pylock URL"
             )
-        value = value.lower()
-        valid = HEX_RE.match(value) is not None and len(value) == HASH_LENGTHS[key]
-        if not separator or not valid:
-            raise LockRejected(f"[M4] invalid {key} digest in the Pylock URL")
-        if key in pinned:
-            raise LockRejected(f"[M4] {key} given twice in the Pylock URL")
-        pinned[key] = value
+        pinned[key.lower()] = value.lower()
     return MappingProxyType(pinned)
 
 

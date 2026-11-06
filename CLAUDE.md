@@ -217,8 +217,10 @@ Open:
 - `glue.rs`: settings preamble (config files, `GlobalSettings`, `CacheSettings`, `ToolRunSettings::resolve`, client builder) and `resolve()`, copied from `resolve_environment` with a `DependencyMode` parameter: `Direct` picks the root like `uv pip install --no-deps`, `Transitive` resolves with the lock's pins as constraints.
 - `pylock_url.rs` (M1 to M5, N1) and `lock.rs` (N1, C1 to C4): ports of the Python modules; markers via `MarkerTree::evaluate_pep751`. uv's `PylockToml` keeps markers, sources and hashes private, so the lock has its own serde struct.
 - `locked.rs`: the flow. Root METADATA from the PEP 658 file through `RegistryClient::uncached_client` (index auth); no PEP 658: not supported yet. Lock fetch: covered URL (F3 rule) through the same client, otherwise a client with `AuthIntegration::NoAuthMiddleware`. The resolver output is checked (C5.1 to C5.4, C7, yanked from `File.yanked`) and rebuilt as a `Resolution` (`Node::Dist` with the verified hashes, only the wheel uv picked), then `CachedEnvironment::from_locked_resolution` installs and caches it (the pattern of `uv-project-commands/src/check.rs`), and the script runs with `run_to_completion`.
-- Test switch: `UVXL_TEST_ALLOW_HTTP=1` allows an http lock URL (M3).
-- Not done: P1 receipt, root without PEP 658 metadata (fallback: download the wheel), `--with`, Windows checks.
+- Plain http lock URLs (M3) are accepted only for hosts in uv's `--allow-insecure-host` (`UV_INSECURE_HOST`); the tests pass `--allow-insecure-host 127.0.0.1`. No extra test switch.
+- Refused (they would bypass the lock): `--with`, `--with-editable`, `--with-requirements`, `--constraints`, `--overrides`. Checked first, before any network access.
+- P1 (receipt) is skipped in the Rust version: uv caches the environment itself (`CachedEnvironment`), keyed by the resolution.
+- Not done: root without PEP 658 metadata (fallback: download the wheel), Windows checks, `-v` logging (uv's tracing setup is in the private `logging` module of the `uv` binary crate).
 - Out of scope: uv's client follows https to http redirects (F4); treat as an upstream issue.
 
 ### 5.4 Testing approach

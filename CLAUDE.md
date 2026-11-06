@@ -139,10 +139,10 @@ Final home: https://github.com/CarliJoy/uvxl (MIT). Work happens on the fork htt
 ├── CLAUDE.md, README.md, CHANGELOG.md, LICENSE
 ├── pyproject.toml              # virtual workspace root: dev group, ruff, mypy, pytest, coverage
 ├── uv.lock
-├── .pre-commit-config.yaml     # prek hooks: everything CI checks
+├── .pre-commit-config.yaml     # prek hooks in groups lint, test, build, wheels: CI runs the same
 ├── .github/workflows/          # ci.yml (checks, wheels, wheel tests), release.yml (PyPI)
 ├── docs/                       # spec.md (section 3), uv-findings.md (section 6)
-├── scripts/                    # rust-coverage.sh, set-rust-version.py
+├── scripts/                    # rust-coverage.sh, test-wheels.sh, set-rust-version.py
 ├── tests/                      # all tests (one conftest.py and helpers.py)
 └── packages/
     ├── uvxl/                   # meta package: `uvxl` and `pylock-verify` commands, picks a backend
@@ -194,11 +194,14 @@ A wrapper on uv's crates, about 1,200 lines, about 300 of them copied glue marke
 - **Coverage, no mocks:** Python 100% line and branch (`coverage` with `patch = subprocess`); Rust 100% lines for `pylock_url.rs`, `lock.rs`, `locked.rs`, measured from the same pytest run with an instrumented binary (`scripts/rust-coverage.sh`, cargo-llvm-cov; `glue.rs` and `main.rs` reported, not gated). Unreachable defensive branches are removed rather than faked.
 - Built test wheels need METADATA, WHEEL and RECORD; tamper tests need a *valid* wheel of the same size to reach the hash check.
 - Fixture environment: `UV_NO_CACHE=1` (removed where environments must persist), temp `HOME` and XDG directories, no `NETRC`, `chdir` to tmp, `no_proxy=127.0.0.1`. The fake index is plain http: tests pass `--allow-insecure-host 127.0.0.1`.
-- The suite also runs against **installed wheels** (CI `test-wheels`; locally: build, install into a fresh venv, run `pytest`).
+- The suite also runs against **installed wheels** (prek group `wheels`, manual stage: `scripts/test-wheels.sh` installs `dist/` into `build/test-wheels-venv` and runs `pytest`; CI `test-wheels` runs the same hook).
 
 ### 5.4 CI and releases
 
-- `ci.yml`: `checks` (prek on Linux), `build-pure`, `build-rust` (maturin-action: Linux x86_64/aarch64 manylinux and musllinux, macOS arm64/x86_64, Windows x64), `test-wheels` (Linux, macOS, Windows × Python 3.12 to 3.14, the built wheels in a fresh environment, the whole suite).
+- Local and CI parity through prek groups (`.pre-commit-config.yaml`): `lint` (ruff, mypy, cargo fmt and clippy), `test` (cargo test, entry points, pytest with coverage), `build` (sdists and pure wheels into `dist/`), `wheels` (manual stage: `build` plus the uvxl-rs wheel for this platform, then the suite against the wheels).
+  A CI job runs a group, or one hook of it; only the cross-platform uvxl-rs wheels use maturin-action instead.
+  Jobs without the workspace run prek from a dev-group environment (`uv run --locked --only-group dev prek …`).
+- `ci.yml`: `checks` (prek groups `lint` and `test` on Linux), `build-pure` (group `build`), `build-rust` (maturin-action: Linux x86_64/aarch64 manylinux and musllinux, macOS arm64/x86_64, Windows x64), `test-wheels` (hook `test-wheels` on Linux, macOS, Windows × Python 3.12 to 3.14: the built wheels in a fresh environment, the whole suite).
 - `release.yml`: on `v*` tags, `ci.yml` with the tag as version, a version check, then PyPI trusted publishing with PEP 740 attestations (environment `pypi`; trusted publishers must be configured on PyPI for `uvxl`, `uvxl-py`, `uvxl-rs`).
 - The fork's token can push and read runs and logs, not cancel or re-run them.
 
@@ -273,7 +276,9 @@ Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting t
 
 ```
 uv sync                                   # whole workspace; builds uvxl-rs with maturin
-uv run prek run --all-files               # all checks: ruff, mypy, cargo fmt/clippy/test, tests, coverage
+uv run prek run --all-files               # all checks: ruff, mypy, cargo fmt/clippy/test, build, tests, coverage
+uv run prek run --all-files --group lint  # one group (lint, test, build), as CI runs it
+uv run prek run --all-files --stage manual --group wheels  # build all wheels, test them installed
 uv run pytest                             # tests only (need uv on PATH)
 scripts/rust-coverage.sh                  # Rust coverage from the pytest suite (cargo-llvm-cov)
 uv build --package uvxl                   # also uvxl-py; uvxl-rs builds a wheel for this platform

@@ -44,9 +44,12 @@ The rules (with the IDs used in error messages) are in [docs/spec.md](docs/spec.
 
 ```
 uv sync                       # all packages; builds uvxl-rs with maturin (needs Rust 1.99)
-uv run prek run --all-files   # format, lint, type check, tests with coverage
+uv run prek run --all-files   # format, lint, type check, build, tests with coverage
+uv run prek run --all-files --group lint                    # one group: lint, test or build
+uv run prek run --all-files --stage manual --group wheels   # tests against the built wheels
 ```
 
+CI runs the same prek groups (`.pre-commit-config.yaml`).
 See [CLAUDE.md](CLAUDE.md) for the design notes and conventions.
 
 ## License

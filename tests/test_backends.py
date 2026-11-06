@@ -59,7 +59,9 @@ def test_environment_is_in_the_cache_dir_and_reused(
     assert second.returncode == 3, second.stderr
     environment = environment_of(first)
     assert environment == environment_of(second)
-    assert environment.is_relative_to(world.directory / "uv-cache")
+    # Resolved: on macOS /var is a symlink to /private/var.
+    cache = (world.directory / "uv-cache").resolve()
+    assert environment.resolve().is_relative_to(cache)
     assert len(lock_requests(world.index)) == 2  # the lock is fetched every run
 
 

@@ -20,7 +20,7 @@ services:
       - claude
       - remote-control
       - --name
-      - locked-install
+      - locked-install-compose
       - --permission-mode
       - ${CLAUDE_PERMISSION_MODE:-acceptEdits}
     # Local, git-ignored settings (git identity and more), passed into the

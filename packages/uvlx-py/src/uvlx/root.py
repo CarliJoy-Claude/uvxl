@@ -13,7 +13,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 
-from uvlx.errors import MetadataError, VerifyError
+from uvlx.errors import VerifyError
 from uvlx.uv import Uv
 from uvlx.wheel import RootWheel, root_from_metadata
 
@@ -53,7 +53,7 @@ def read_metadata(target: Path) -> bytes:
     """METADATA of the single distribution installed in ``target``."""
     found = tuple(target.glob("*.dist-info/METADATA"))
     if len(found) != 1:
-        raise MetadataError(f"expected one dist-info after installing, got {found}")
+        raise VerifyError(f"expected one dist-info after installing, got {found}")
     return found[0].read_bytes()
 
 
@@ -65,5 +65,5 @@ def select_root(uv: Uv, request: RootRequest) -> RootWheel:
         metadata = read_metadata(target)
     root = root_from_metadata(metadata, request.requirement())
     if root.name != request.name:
-        raise MetadataError(f"uv installed {root.name}, expected {request.name}")
+        raise VerifyError(f"uv installed {root.name}, expected {request.name}")
     return root

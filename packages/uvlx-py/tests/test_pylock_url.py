@@ -3,7 +3,7 @@
 import httpx2
 import pytest
 
-from uvlx.errors import FetchError, LockRejected
+from uvlx.errors import LockRejected, VerifyError
 from uvlx.fetch import FetchPolicy, https_only
 from uvlx.pylock_url import find_lock_url, normalize_label
 
@@ -89,5 +89,5 @@ def test_named_lock_file_and_percent_encoding() -> None:
 def test_http_hop_is_refused() -> None:
     check = https_only(FetchPolicy())
     check(httpx2.Request("GET", "https://h.example/pylock.toml"))
-    with pytest.raises(FetchError, match=r"\[F4\]"):
+    with pytest.raises(VerifyError, match=r"\[F4\]"):
         check(httpx2.Request("GET", "http://h.example/pylock.toml"))

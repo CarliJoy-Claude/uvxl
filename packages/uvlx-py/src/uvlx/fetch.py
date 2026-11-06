@@ -16,7 +16,7 @@ from typing import Final
 
 import httpx2
 
-from uvlx.errors import FetchError, LockRejected
+from uvlx.errors import LockRejected, VerifyError
 from uvlx.pylock_url import LockUrl
 
 USER_AGENT: Final = "uvlx/0.1"
@@ -47,7 +47,7 @@ def https_only(policy: FetchPolicy) -> Callable[[httpx2.Request], None]:
         scheme = request.url.scheme
         if scheme == "https" or (policy.allow_http and scheme == "http"):
             return
-        raise FetchError(f"[F4] refusing non-https URL {request.url}")
+        raise VerifyError(f"[F4] refusing non-https URL {request.url}")
 
     return check
 
@@ -68,14 +68,14 @@ def download(url: str, policy: FetchPolicy) -> bytes:
             for chunk in response.iter_bytes():
                 content.extend(chunk)
                 if len(content) > policy.max_size:
-                    raise FetchError(
+                    raise VerifyError(
                         f"[F4] the lock at {url} is larger than {policy.max_size} bytes"
                     )
             return bytes(content)
     except httpx2.TooManyRedirects as error:
-        raise FetchError(f"[F4] too many redirects for {url}") from error
+        raise VerifyError(f"[F4] too many redirects for {url}") from error
     except httpx2.HTTPError as error:
-        raise FetchError(
+        raise VerifyError(
             f"[F6] fetching the lock from {url} failed: {error}"
         ) from error
 

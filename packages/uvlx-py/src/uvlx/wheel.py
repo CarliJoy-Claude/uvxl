@@ -11,7 +11,7 @@ from packaging.metadata import Metadata
 from packaging.utils import canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
-from uvlx.errors import MetadataError, VerifyError
+from uvlx.errors import VerifyError
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,9 +43,9 @@ def root_from_metadata(
             canonicalize_name(extra) for extra in metadata.provides_extra or ()
         )
     except (ValueError, ExceptionGroup) as error:
-        raise MetadataError(f"{where}: invalid metadata: {error}") from error
+        raise VerifyError(f"{where}: invalid metadata: {error}") from error
     if name is None or version is None:
-        raise MetadataError(f"{where}: metadata lacks Name or Version")
+        raise VerifyError(f"{where}: metadata lacks Name or Version")
     return RootWheel(canonicalize_name(name), version, extras, raw, file)
 
 
@@ -64,12 +64,12 @@ def load_root_wheel(path: Path) -> RootWheel:
                 if re.fullmatch(r"[^/]+\.dist-info/METADATA", name)
             )
             if len(candidates) != 1:
-                raise MetadataError(f"{path.name}: expected one dist-info/METADATA")
+                raise VerifyError(f"{path.name}: expected one dist-info/METADATA")
             raw = archive.read(candidates[0])
     except zipfile.BadZipFile as error:
-        raise MetadataError(f"{path.name}: not a valid wheel archive") from error
+        raise VerifyError(f"{path.name}: not a valid wheel archive") from error
     file = RootFile(path.name, hashlib.sha256(data).hexdigest())
     root = root_from_metadata(raw, path.name, file)
     if root.name != file_name or root.version != file_version:
-        raise MetadataError(f"{path.name}: file name and metadata disagree")
+        raise VerifyError(f"{path.name}: file name and metadata disagree")
     return root

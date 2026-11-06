@@ -27,7 +27,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 
 from uvlx.candidates import Candidate, parse_candidates, yanked_releases
-from uvlx.errors import LockRejected, UvError, VerifyError
+from uvlx.errors import LockRejected, VerifyError
 from uvlx.lock import LockEntry, lock_environment, parse_lock
 from uvlx.toml_values import common_verified
 from uvlx.urls import IndexKey, configured_index_for, index_key, strip_user_info
@@ -210,7 +210,7 @@ def clean_root(
 
     names = frozenset(package.name for package in packages)
     if root.name not in names:
-        raise UvError(f"uv's resolution does not contain {root.name}")
+        raise VerifyError(f"uv's resolution does not contain {root.name}")
     return CleanResult(
         packages=tuple(sorted(packages, key=lambda package: package.name)),
         unreached=tuple(sorted(set(lock) - names)),

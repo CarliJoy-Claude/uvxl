@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Final
 from urllib.parse import unquote, urlsplit
 
-from uvlx.errors import LockRejected, MetadataError
+from uvlx.errors import LockRejected, VerifyError
 from uvlx.lock import is_pylock_name
 from uvlx.toml_values import SUPPORTED_HASHES
 
@@ -44,7 +44,7 @@ def project_urls(metadata: bytes) -> tuple[tuple[str, str], ...]:
     for value in message.get_all("Project-URL") or ():
         label, separator, url = str(value).partition(",")
         if not separator:
-            raise MetadataError(f"malformed Project-URL {str(value)!r}")
+            raise VerifyError(f"malformed Project-URL {str(value)!r}")
         entries.append((label.strip(), url.strip()))
     return tuple(entries)
 

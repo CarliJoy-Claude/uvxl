@@ -272,7 +272,7 @@ Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting t
 - **Immutables everywhere:** `Mapping`, `Sequence`, `Set` in signatures; tuples and frozensets in code; `@dataclass(frozen=True, slots=True)`.
 - **Returned mappings are wrapped in `types.MappingProxyType`** (switch to `frozendict` once the target is Python 3.15+).
 - Error messages carry the spec rule ID in brackets.
-- Exceptions: `VerifyError` base, `LockRejected`, `UvError`, `FetchError`, `MetadataError`. Exit codes are not important in the PoC.
+- Exceptions: `VerifyError` (any error) and `LockRejected` (the lock cannot be used). The rule ID in the message tells the rest. Exit codes are not important in the PoC.
 - Markdown: start every sentence on a new line. In prose, do not use the en dash `–`; use `:` instead.
 - Rust (later): `cargo fmt`, `cargo clippy -- -D warnings`, same rule IDs in errors.
 

@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlsplit
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvlx.errors import LockRejected, UvError
+from uvlx.errors import LockRejected, VerifyError
 from uvlx.toml_values import (
     expect_mapping,
     expect_sequence,
@@ -62,7 +62,7 @@ def parse_candidates(text: str) -> CandidateLock:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
-        raise UvError(f"uv printed an invalid pylock: {error}") from error
+        raise VerifyError(f"uv printed an invalid pylock: {error}") from error
     candidates: list[Candidate] = []
     for position, raw in enumerate(expect_sequence(data.get("packages", ()), "uv")):
         where = f"uv packages[{position}]"

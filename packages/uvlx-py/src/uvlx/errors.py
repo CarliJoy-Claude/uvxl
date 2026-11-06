@@ -1,21 +1,9 @@
-"""Exceptions. The CLI maps them to exit codes (see ``uvlx.cli``)."""
+"""Exceptions. The rule ID in the message says what went wrong."""
 
 
 class VerifyError(Exception):
-    """Base class for all errors of this tool."""
+    """Any error of this tool: uv, network, metadata, usage."""
 
 
 class LockRejected(VerifyError):
-    """The lock cannot be used safely (or at all) for this root wheel. Exit 1."""
-
-
-class MetadataError(VerifyError):
-    """Wheel metadata is missing or malformed."""
-
-
-class UvError(VerifyError):
-    """Running uv failed for a reason other than the lock. Exit 2."""
-
-
-class FetchError(VerifyError):
-    """The lock could not be fetched (network, HTTP status, limits). Exit 2."""
+    """The lock cannot be used safely (or at all) for this root."""

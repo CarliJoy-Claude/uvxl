@@ -13,7 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
-from uvlx.errors import LockRejected, UvError
+from uvlx.errors import LockRejected, VerifyError
 
 # Prints the PEP 508 marker environment of the interpreter it runs in.
 # Mirrors packaging.markers.default_environment(), which the target
@@ -95,7 +95,7 @@ class Uv:
                 raise LockRejected(
                     "[C5] uv finds no resolution within the lock's pins:\n" + stderr
                 )
-            raise UvError(f"uv pip compile failed:\n{stderr}")
+            raise VerifyError(f"uv pip compile failed:\n{stderr}")
         return CompileOutput(process.stdout, stderr)
 
     def install(self, lock: Path) -> None:
@@ -113,7 +113,7 @@ class Uv:
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             message = without_noise(result.stderr)
-            raise UvError(f"uv pip install failed:\n{message}")
+            raise VerifyError(f"uv pip install failed:\n{message}")
 
     def install_target(self, requirement: str, target: Path) -> None:
         """Install one wheel, without dependencies, into a plain directory."""
@@ -134,7 +134,7 @@ class Uv:
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             message = without_noise(result.stderr)
-            raise UvError(f"uv pip install --target failed:\n{message}")
+            raise VerifyError(f"uv pip install --target failed:\n{message}")
 
     def create_venv(self, path: Path) -> str:
         """Create (or recreate) a virtual environment for the target interpreter."""
@@ -150,7 +150,7 @@ class Uv:
             (*command, str(path)), capture_output=True, text=True, check=False
         )
         if result.returncode != 0:
-            raise UvError(f"uv venv failed:\n{without_noise(result.stderr)}")
+            raise VerifyError(f"uv venv failed:\n{without_noise(result.stderr)}")
         return str(path / "bin" / "python")
 
 
@@ -159,7 +159,7 @@ def find_uv(explicit: str | None) -> str:
         return explicit
     found = shutil.which("uv")
     if found is None:
-        raise UvError("uv not found on PATH (use --uv)")
+        raise VerifyError("uv not found on PATH (use --uv)")
     return found
 
 
@@ -170,7 +170,7 @@ def find_interpreter(uv: str, request: str | None) -> str:
         command = (*command, request)
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        raise UvError(f"uv python find failed:\n{without_noise(result.stderr)}")
+        raise VerifyError(f"uv python find failed:\n{without_noise(result.stderr)}")
     return result.stdout.strip()
 
 
@@ -183,6 +183,6 @@ def marker_environment(interpreter: str) -> Mapping[str, str]:
         check=False,
     )
     if result.returncode != 0:
-        raise UvError(f"cannot query {interpreter}: {result.stderr.strip()}")
+        raise VerifyError(f"cannot query {interpreter}: {result.stderr.strip()}")
     raw = json.loads(result.stdout)
     return MappingProxyType({str(key): str(value) for key, value in raw.items()})

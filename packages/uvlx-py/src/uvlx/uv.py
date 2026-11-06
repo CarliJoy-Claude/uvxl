@@ -13,34 +13,19 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
+import packaging
+
 from uvlx.errors import LockRejected, VerifyError
 
-# Prints the PEP 508 marker environment of the interpreter it runs in.
-# Mirrors packaging.markers.default_environment(), which the target
-# interpreter may not have installed.
-MARKER_ENVIRONMENT_SCRIPT: Final = """
-import json, os, platform, sys
+PACKAGING_PATH: Final = str(Path(packaging.__file__).parent.parent)
 
-def full_version(info):
-    version = f"{info.major}.{info.minor}.{info.micro}"
-    if info.releaselevel != "final":
-        version += info.releaselevel[0] + str(info.serial)
-    return version
-
-print(json.dumps({
-    "implementation_name": sys.implementation.name,
-    "implementation_version": full_version(sys.implementation.version),
-    "os_name": os.name,
-    "platform_machine": platform.machine(),
-    "platform_release": platform.release(),
-    "platform_system": platform.system(),
-    "platform_version": platform.version(),
-    "python_full_version": platform.python_version(),
-    "platform_python_implementation": platform.python_implementation(),
-    "python_version": ".".join(platform.python_version_tuple()[:2]),
-    "sys_platform": sys.platform,
-}))
-"""
+# Prints the PEP 508 marker environment of the interpreter it runs in, with
+# our own copy of packaging (pure Python) appended to that interpreter's path.
+MARKER_ENVIRONMENT_SCRIPT: Final = (
+    "import json, sys; sys.path.append(sys.argv[1]); "
+    "from packaging.markers import default_environment; "
+    "print(json.dumps(default_environment()))"
+)
 
 
 def without_noise(stderr: str) -> str:
@@ -177,7 +162,7 @@ def find_interpreter(uv: str, request: str | None) -> str:
 def marker_environment(interpreter: str) -> Mapping[str, str]:
     """PEP 508 marker values of the target interpreter, not the running one."""
     result = subprocess.run(
-        (interpreter, "-I", "-c", MARKER_ENVIRONMENT_SCRIPT),
+        (interpreter, "-I", "-c", MARKER_ENVIRONMENT_SCRIPT, PACKAGING_PATH),
         capture_output=True,
         text=True,
         check=False,

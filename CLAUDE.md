@@ -178,7 +178,7 @@ uv has no Python API (the PyPI `uv` package only ships the binary), so the PoC d
 3. Python parses uv's candidate pylock and checks it against the lock: every package must be locked with the same version (C5.1, C5.2), the lock's `index` must be a configured index (C5.3), only wheels whose hash the lock lists are kept (C5.4, C5.5), and the root keeps the index's wheels of its version (C7).
 4. A second `uv pip compile --no-deps --emit-index-url --format requirements.txt` lists the configured indexes (that flag only works in requirements format).
 5. The cleaned lock is written with `tomli_w` and installed with `uv pip install -r` (see 5.3).
-6. Markers are evaluated for the **target** interpreter (found with `uv python find`, queried with a small script), not the one running the tool.
+6. Markers are evaluated for the **target** interpreter (found with `uv python find`, queried with our own `packaging.markers.default_environment()` on its path), not the one running the tool.
 
 `pylock-verify LOCK PACKAGE` (for maintainers, before publishing a lock) is a static check of the file only: N1, and every entry is a registry wheel/sdist entry with hashes, version and index (C3), except one `directory` entry for PACKAGE itself (C2). No uv, no network; everything else is checked at install.
 Exit codes: 0 ok, 1 error, 2 usage error.

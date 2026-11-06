@@ -159,7 +159,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 ## 5. Python PoC: current state and plan
 
-### 5.1 Existing code (migrated 2026-11-05, `uvlx` run added 2026-11-05)
+### 5.1 Existing code (migrated 2026-11-05, `uvlx` added 2026-11-05, simplified 2026-11-06)
 
 - The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvlx-py/src/uvlx/`, split into modules:
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `wheel` (root wheel from a file or from METADATA bytes), `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
@@ -194,8 +194,8 @@ Options after COMMAND belong to the command; indexes come from uv's own settings
    `pylock-verify-clean` still binds the root to its local file (`RootWheel.file`).
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail (no override flag in the PoC).
    No `Pylock` URL fails with `[M5]`.
-3. **Fetch:** httpx2 with `follow_redirects` (limit 5; it drops `Authorization` once a redirect leaves the origin), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. httpx2 never reads netrc by itself. Pinned hash checked before parsing.
-   No credentials are sent (F3 is left to the Rust version).
+3. **Fetch:** httpx2 with `follow_redirects` (limit 5), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. Pinned hash checked before parsing.
+   No credentials are sent (F3 is left to the Rust version; for it: httpx2 would drop `Authorization` on cross-origin redirects and never reads netrc by itself).
 4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`; `clean(wheel_path, lock_path, ...)` remains for `pylock-verify-clean`.
 5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>` (cache: `--cache-dir`, `$XDG_CACHE_HOME/uvlx` or `~/.cache/uvlx`), built with `uv venv --clear` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
    The receipt `uvlx-receipt.json` (P1: lock URL, mode, lock sha256, fetch time, root name and version) is written last; without one the environment is created again.

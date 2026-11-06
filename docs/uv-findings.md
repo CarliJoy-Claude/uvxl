@@ -26,3 +26,7 @@ Kept in sync with section 6 of `CLAUDE.md`, extended as we learn.
 - uv 0.13.7: `uv auth token URL` only sees `uv auth login` credentials, by URL prefix, and only with `--username` when they were stored with a user name. It does not see credentials from index URLs, `UV_INDEX_*` variables or netrc.
 - uv 0.13.7: `uv pip install --target DIR --no-deps --require-hashes -r -` works with `--python`; the dist-info keeps the wheel's `WHEEL` file, whose `Tag` lines identify the installed wheel.
 - uv (source at commit 24688aa): without `index` on a pylock entry, uv uses the file URL minus the file name as the index; per its own comment the only effect is the cache key (`crates/uv-lock/src/lock/export/pylock_toml.rs`).
+- uv 0.13.7 crates: `ResolutionMetadata` has no Project-URLs and the resolver caches only that struct; `Metadata23::project_urls` is a map (duplicate labels lost). Read METADATA via the PEP 658 file instead.
+- uv 0.13.7 crates: the auth middleware tries realm-cached credentials and netrc for any URL after a 401; `AuthIntegration::NoAuthMiddleware` turns it off. Cross-origin redirects drop credentials (`CrossOriginCredentialsPolicy::Secure`), but https to http redirects are followed.
+- uv 0.13.7 crates: `uv pip install --no-deps` is a resolution with `DependencyMode::Direct` (`uv-cli/src/settings.rs`, `uv-pip-commands/src/install.rs`).
+- uv 0.13.7 crates: `CachedEnvironment::from_locked_resolution` takes a ready `Resolution`, verifies its hashes and caches the environment by it; `Resolution::new`, `Node` and `Edge` are public.

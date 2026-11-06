@@ -209,13 +209,25 @@ Open:
 - Windows:
   - Virtual environments use `Scripts\python.exe` and `Scripts\<command>.exe` instead of `bin/` (`Uv.create_venv`, `environments.py`).
 
+### 5.5 Rust spike `uvlx-rs` (2026-11-06): works end to end
+
+`packages/uvlx-rs` is a wrapper on uv's crates (`=0.0.99` = uv 0.13.7), about 1,200 lines, of which about 300 are copied glue marked `COPIED from <file> (uv 0.13.7)` / `END COPIED` (changes marked `CHANGED`).
+
+- `main.rs`: parses `["uv", "tool", "uvx", args...]` with `uv_cli::Cli` (uv's own `uvx` does the same), so all `uvx` options work. Runtime setup copied from `crates/uv/src/lib.rs`.
+- `glue.rs`: settings preamble (config files, `GlobalSettings`, `CacheSettings`, `ToolRunSettings::resolve`, client builder) and `resolve()`, copied from `resolve_environment` with a `DependencyMode` parameter: `Direct` picks the root like `uv pip install --no-deps`, `Transitive` resolves with the lock's pins as constraints.
+- `pylock_url.rs` (M1 to M5, N1) and `lock.rs` (N1, C1 to C4): ports of the Python modules; markers via `MarkerTree::evaluate_pep751`. uv's `PylockToml` keeps markers, sources and hashes private, so the lock has its own serde struct.
+- `locked.rs`: the flow. Root METADATA from the PEP 658 file through `RegistryClient::uncached_client` (index auth); no PEP 658: not supported yet. Lock fetch: covered URL (F3 rule) through the same client, otherwise a client with `AuthIntegration::NoAuthMiddleware`. The resolver output is checked (C5.1 to C5.4, C7, yanked from `File.yanked`) and rebuilt as a `Resolution` (`Node::Dist` with the verified hashes, only the wheel uv picked), then `CachedEnvironment::from_locked_resolution` installs and caches it (the pattern of `uv-project-commands/src/check.rs`), and the script runs with `run_to_completion`.
+- Test switch: `UVLX_TEST_ALLOW_HTTP=1` allows an http lock URL (M3).
+- Not done: P1 receipt, root without PEP 658 metadata (fallback: download the wheel), `--with`, Windows checks.
+- Out of scope: uv's client follows https to http redirects (F4); treat as an upstream issue.
+
 ### 5.4 Testing approach
 
 - Tests run **real `uv`** against a local fake PEP 691 index (`http.server` on 127.0.0.1) serving JSON pages, PEP 658 `.metadata`, multiple wheels per project, a `yanked` flag, a `replacement` file (valid wheel with different bytes, for hash-tamper tests) and optional Basic auth.
 - Built test wheels need METADATA, WHEEL and RECORD, or uv refuses them.
 - Tamper tests must serve a *valid* wheel with different bytes; a broken zip fails before the hash check.
 - Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
-- Tests that need `uv` are skipped when it is not on PATH.
+- Tests that need `uv` are skipped when it is not on PATH; `test_uvlx_rs.py` runs the Rust binary against the same fake index and is skipped when it is not built (`$CARGO_TARGET_DIR/debug/uvlx-rs`).
 - Pass `--allow-insecure-http`-style overrides only in tests; production code requires https.
 - The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
 
@@ -237,6 +249,10 @@ Open:
 - uv's auth middleware applies index credentials by URL prefix, so a lock under an index path would get its credentials automatically in a Rust implementation.
 - `uv_tool_commands::run` takes 27 parameters and resolves internally with no hook for a pre-built resolution; a Rust `uvlx` needs its own run flow around `sync_environment`, plus copied settings glue from `crates/uv/src/lib.rs`.
 - Earlier experiments (uv 0.13.6, httpie): `uv run --frozen` with a hand-edited `uv.lock` pointing the root at the uploaded wheel works, but plain `uv run` re-locks it; pylock is ignored by `uvx`.
+- uv 0.13.7 crates: `ResolutionMetadata` has no Project-URLs and the resolver caches only that struct; `Metadata23::project_urls` is a map (duplicate labels lost). Read METADATA via the PEP 658 file instead.
+- uv 0.13.7 crates: the auth middleware tries realm-cached credentials and netrc for any URL after a 401; `AuthIntegration::NoAuthMiddleware` turns it off. Cross-origin redirects drop credentials (`CrossOriginCredentialsPolicy::Secure`), but https to http redirects are followed.
+- uv 0.13.7 crates: `uv pip install --no-deps` is a resolution with `DependencyMode::Direct` (`uv-cli/src/settings.rs`, `uv-pip-commands/src/install.rs`).
+- uv 0.13.7 crates: `CachedEnvironment::from_locked_resolution` takes a ready `Resolution`, verifies its hashes and caches the environment by it; `Resolution::new`, `Node` and `Edge` are public.
 - uv 0.13.7: `--emit-index-url` prints index URLs **with** their user info.
 - uv 0.13.7: `uv auth token URL` only sees `uv auth login` credentials, by URL prefix, and only with `--username` when they were stored with a user name. It does not see credentials from index URLs, `UV_INDEX_*` variables or netrc.
 - uv 0.13.7: `uv pip install --target DIR --no-deps --require-hashes -r -` works with `--python`; the dist-info keeps the wheel's `WHEEL` file, whose `Tag` lines identify the installed wheel.

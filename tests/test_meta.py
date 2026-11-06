@@ -95,12 +95,11 @@ def test_pylock_verify_is_available_through_uvxl() -> None:
 
 # --------------------------------------------------------------------------
 # Real environments without a backend (no mocks): a fresh virtual environment
-# sees only the given source directories, plus the dev site-packages for
-# third-party dependencies like click (not their .pth files, so no backend).
+# that sees only the given directories.
 # --------------------------------------------------------------------------
 
 
-def bare_environment(tmp_path: Path, sources: Sequence[Path]) -> str:
+def bare_environment(tmp_path: Path, paths: Sequence[Path]) -> str:
     assert UV is not None
     venv = tmp_path / "venv"
     subprocess.run(
@@ -114,7 +113,6 @@ def bare_environment(tmp_path: Path, sources: Sequence[Path]) -> str:
         text=True,
         check=True,
     ).stdout.strip()
-    paths = [*sources, Path(sysconfig.get_path("purelib"))]
     (Path(purelib) / "uvxl_test.pth").write_text(
         "".join(f"{path}\n" for path in paths), encoding="utf-8"
     )
@@ -123,9 +121,10 @@ def bare_environment(tmp_path: Path, sources: Sequence[Path]) -> str:
 
 @pytest.mark.skipif(UV is None, reason="uv is not installed")
 def test_without_rust_the_python_backend_runs(tmp_path: Path) -> None:
-    python = bare_environment(
-        tmp_path, (ROOT / "packages/uvxl/src", ROOT / "packages/uvxl-py/src")
-    )
+    # The sources, plus the test environment's site-packages for click and
+    # the other dependencies (uvxl-rs, in its scripts directory, stays out).
+    sources = (ROOT / "packages/uvxl/src", ROOT / "packages/uvxl-py/src")
+    python = bare_environment(tmp_path, (*sources, Path(sysconfig.get_path("purelib"))))
     result = run_uvxl("--help", python=python)
     assert result.returncode == 0, result.stderr
     assert PYTHON_HELP in result.stdout
@@ -136,6 +135,7 @@ def test_without_rust_the_python_backend_runs(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(UV is None, reason="uv is not installed")
 def test_without_any_backend_uvxl_fails(tmp_path: Path) -> None:
+    # The meta package needs nothing but the standard library.
     python = bare_environment(tmp_path, (ROOT / "packages/uvxl/src",))
     result = run_uvxl("--help", python=python)
     assert result.returncode == 1

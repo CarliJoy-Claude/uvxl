@@ -36,16 +36,10 @@ class Candidate:
     wheels: tuple[Wheel, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class CandidateLock:
-    packages: tuple[Candidate, ...]
-    requires_python: str | None
-
-
-def parse_candidates(text: str) -> CandidateLock:
+def parse_candidates(text: str) -> tuple[Candidate, ...]:
     """Read the pylock that ``uv pip compile --format pylock.toml`` printed."""
     data = tomllib.loads(text)
-    candidates = tuple(
+    return tuple(
         Candidate(
             name=canonicalize_name(package["name"]),
             version=Version(package["version"]),
@@ -61,7 +55,6 @@ def parse_candidates(text: str) -> CandidateLock:
         )
         for package in data.get("packages", ())
     )
-    return CandidateLock(candidates, data.get("requires-python"))
 
 
 def yanked_releases(stderr: str) -> frozenset[tuple[str, Version]]:

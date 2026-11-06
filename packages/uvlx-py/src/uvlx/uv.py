@@ -121,12 +121,10 @@ class Uv:
         return str(path / "bin" / "python")
 
 
-def find_uv(explicit: str | None) -> str:
-    if explicit is not None:
-        return explicit
+def find_uv() -> str:
     found = shutil.which("uv")
     if found is None:
-        raise VerifyError("uv not found on PATH (use --uv)")
+        raise VerifyError("uv not found on PATH")
     return found
 
 

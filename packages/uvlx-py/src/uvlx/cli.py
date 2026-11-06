@@ -32,8 +32,8 @@ def reported_errors() -> Iterator[None]:
         raise click.ClickException(str(error)) from error
 
 
-def make_uv(uv_path: str | None, python: str | None, uv_args: Sequence[str]) -> Uv:
-    executable = find_uv(uv_path)
+def make_uv(python: str | None, uv_args: Sequence[str]) -> Uv:
+    executable = find_uv()
     return Uv(executable, find_interpreter(executable, python), tuple(uv_args))
 
 
@@ -86,7 +86,6 @@ def verify_main(lock: Path, package: str) -> None:
     metavar="REQUEST",
     help="Target interpreter, as understood by `uv python find`.",
 )
-@click.option("--uv", "uv_path", metavar="PATH", help="The uv executable to use.")
 @click.option(
     "--uv-arg",
     "uv_args",
@@ -108,7 +107,6 @@ def uvlx_main(  # noqa: PLR0913
     args: tuple[str, ...],
     from_: str | None,
     python: str | None,
-    uv_path: str | None,
     uv_args: tuple[str, ...],
     cache_dir: Path | None,
 ) -> None:
@@ -128,7 +126,7 @@ def uvlx_main(  # noqa: PLR0913
         requirement = from_
     with reported_errors():
         request = parse_root_request(requirement)
-        uv = make_uv(uv_path, python, uv_args)
+        uv = make_uv(python, uv_args)
         prepared = prepare(uv, request, cache_dir, policy)
     if from_ is None:
         command = request.raw_name

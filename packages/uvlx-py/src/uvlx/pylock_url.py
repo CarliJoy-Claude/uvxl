@@ -21,8 +21,11 @@ class LockUrl:
     """Where the lock is, and the pinned hashes (empty in mutable mode)."""
 
     url: str
-    file_name: str
     pinned: Mapping[str, str]
+
+    @property
+    def file_name(self) -> str:
+        return unquote(urlsplit(self.url).path.rpartition("/")[2])
 
     @property
     def mode(self) -> str:
@@ -87,16 +90,16 @@ def find_lock_url(
         allowed = ("https",)
     if parts.scheme.lower() not in allowed or not parts.hostname:
         raise LockRejected(f"[M3] the Pylock URL must be https: {urls[0]!r}")
-    file_name = unquote(parts.path.rpartition("/")[2])
-    if not is_pylock_name(file_name):
-        raise LockRejected(
-            f"[N1] {file_name!r} in the Pylock URL is not a valid PEP 751 file name"
-        )
-    return LockUrl(
+    lock_url = LockUrl(
         url=parts._replace(fragment="").geturl(),
-        file_name=file_name,
         pinned=parse_fragment(parts.fragment),
     )
+    if not is_pylock_name(lock_url.file_name):
+        raise LockRejected(
+            f"[N1] {lock_url.file_name!r} in the Pylock URL is not a valid "
+            "PEP 751 file name"
+        )
+    return lock_url
 
 
 def is_pylock(label: str) -> bool:

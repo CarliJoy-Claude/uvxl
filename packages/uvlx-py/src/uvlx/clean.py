@@ -49,7 +49,6 @@ class CleanPackage:
 class CleanResult:
     packages: tuple[CleanPackage, ...]
     unreached: tuple[str, ...]
-    requires_python: str | None
 
 
 def check_root(
@@ -164,7 +163,7 @@ def clean_root(
     configured_keys = frozenset(index_key(index) for index in configured)
 
     packages: list[CleanPackage] = []
-    for candidate in candidates.packages:
+    for candidate in candidates:
         if (candidate.name, candidate.version) in yanked:
             raise LockRejected(f"[C5.4] {candidate.name} {candidate.version} is yanked")
         if candidate.name == root.name:
@@ -179,7 +178,6 @@ def clean_root(
     return CleanResult(
         packages=tuple(sorted(packages, key=lambda package: package.name)),
         unreached=tuple(sorted(set(lock) - names)),
-        requires_python=candidates.requires_python,
     )
 
 
@@ -203,7 +201,5 @@ def render(result: CleanResult) -> str:
         entry["wheels"] = wheels
         entries.append(entry)
     document: dict[str, object] = {"lock-version": "1.0", "created-by": CREATED_BY}
-    if result.requires_python is not None:
-        document["requires-python"] = result.requires_python
     document["packages"] = entries
     return tomli_w.dumps(document)

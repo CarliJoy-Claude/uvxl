@@ -165,7 +165,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
 - Added for `uvxl`: `root` (uv picks the root, `RootWheel` from METADATA, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify` = `uvxl_py.cli:verify_main`, `uvxl-py` = `uvxl_py.cli:uvxl_main`).
 - CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
-- Tests in `packages/uvxl-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvxl.py`. All passing with uv 0.13.7.
+- Tests in `tests/` at the workspace root (one `conftest.py` and `helpers.py` for all packages): `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvxl.py`. All passing with uv 0.13.7.
 - An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
 - `packages/uvxl-rs` is a placeholder binary (exits 2) that already builds as a wheel with maturin.
 

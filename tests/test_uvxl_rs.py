@@ -12,7 +12,7 @@ import pytest
 from helpers import FakeIndex, ServedFile, World, build_wheel
 
 TARGET = Path(
-    os.environ.get("CARGO_TARGET_DIR", Path(__file__).parents[2] / "uvxl-rs/target")
+    os.environ.get("CARGO_TARGET_DIR", Path(__file__).parents[1] / "packages/uvxl-rs/target")
 )
 BINARY = TARGET / "debug" / "uvxl-rs"
 LOCK_PATH = "/+f/0a1/pylock.toml"

@@ -14,7 +14,7 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 88
-src = ["packages/uvxl-py/src", "packages/uvxl-py/tests"]
+src = ["packages/uvxl/src", "packages/uvxl-py/src", "tests"]
 
 [tool.ruff.lint]
 # Rule set of https://github.com/CarliJoy/uvrev, plus SIM108 ignored
@@ -89,9 +89,9 @@ combine-as-imports = true
 [tool.mypy]
 strict = true
 python_version = "3.12"
-mypy_path = ["packages/uvxl-py/src", "packages/uvxl-py/tests"]
+mypy_path = ["packages/uvxl/src", "packages/uvxl-py/src", "tests"]
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/uvxl-py/tests"]
+testpaths = ["tests"]
 addopts = ["-ra"]

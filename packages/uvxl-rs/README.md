@@ -13,4 +13,4 @@ The package must declare a `Pylock` Project-URL; the lock is fetched (with the i
 A plain http lock URL is accepted only for a host given with `--allow-insecure-host`, like uv does for indexes.
 
 Code copied from uv is marked `COPIED from <file> (uv 0.13.7)` and `END COPIED`; changes inside copied blocks are marked `CHANGED`.
-The end-to-end tests live in `packages/uvxl-py/tests/test_uvxl_rs.py` and reuse the Python fake index (`cargo build` first).
+The end-to-end tests live in `tests/test_uvxl_rs.py` at the workspace root and reuse the Python fake index (`cargo build` first).

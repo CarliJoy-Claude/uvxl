@@ -20,7 +20,9 @@ YANKED_RE: Final = re.compile(r"`([^`=\s]+)==([^`\s]+)` is yanked")
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateWheel:
+class Wheel:
+    """A wheel file the index serves: URL and size from the index."""
+
     filename: str
     url: str
     size: int | None
@@ -31,7 +33,7 @@ class CandidateWheel:
 class Candidate:
     name: str
     version: Version
-    wheels: tuple[CandidateWheel, ...]
+    wheels: tuple[Wheel, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +50,7 @@ def parse_candidates(text: str) -> CandidateLock:
             name=canonicalize_name(package["name"]),
             version=Version(package["version"]),
             wheels=tuple(
-                CandidateWheel(
+                Wheel(
                     filename=unquote(urlsplit(wheel["url"]).path.rpartition("/")[2]),
                     url=wheel["url"],
                     size=wheel.get("size"),

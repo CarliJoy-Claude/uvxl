@@ -17,15 +17,15 @@ warns on stderr. That warning is parsed, which is fragile.
 """
 
 import re
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from typing import Final
 
 import tomli_w
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvlx.candidates import Candidate, parse_candidates, yanked_releases
+from uvlx.candidates import Candidate, Wheel, parse_candidates, yanked_releases
 from uvlx.errors import LockRejected, VerifyError
 from uvlx.lock import LockEntry, lock_environment, parse_lock
 from uvlx.root import RootWheel
@@ -38,19 +38,11 @@ CREATED_BY: Final = "pylock-verify-clean"
 
 
 @dataclass(frozen=True, slots=True)
-class CleanWheel:
-    filename: str
-    url: str
-    size: int | None
-    hashes: Mapping[str, str]
-
-
-@dataclass(frozen=True, slots=True)
 class CleanPackage:
     name: str
     version: Version
     index: str | None
-    wheels: tuple[CleanWheel, ...]
+    wheels: tuple[Wheel, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,10 +61,10 @@ def check_root(
         raise LockRejected(
             f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
         )
-    kept: list[CleanWheel] = []
+    kept: list[Wheel] = []
     for wheel in candidate.wheels:
         if wheel.hashes:
-            kept.append(CleanWheel(wheel.filename, wheel.url, wheel.size, wheel.hashes))
+            kept.append(wheel)
     if not kept:
         raise LockRejected(
             f"[C7] the configured indexes serve no hashed wheel for the root "
@@ -102,12 +94,12 @@ def check_locked(
             f"[C5.3] the lock names index {entry.index!r} for {entry.name}, "
             "which is not a configured index"
         )
-    kept: list[CleanWheel] = []
+    kept: list[Wheel] = []
     for wheel in candidate.wheels:
         for lock_hashes in entry.wheel_hashes:
             verified = common_verified(lock_hashes, wheel.hashes)
             if verified is not None:
-                kept.append(CleanWheel(wheel.filename, wheel.url, wheel.size, verified))
+                kept.append(replace(wheel, hashes=verified))
                 break
     if not kept:
         raise LockRejected(

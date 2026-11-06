@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Final
 
 from uvlx.fetch import FetchedLock
+from uvlx.root import RootWheel
 from uvlx.uv import Uv
-from uvlx.wheel import RootWheel
 
 RECEIPT_NAME: Final = "uvlx-receipt.json"
 LOCK_NAME: Final = "pylock.uvlx.toml"

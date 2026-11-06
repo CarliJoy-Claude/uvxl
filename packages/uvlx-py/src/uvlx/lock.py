@@ -165,3 +165,35 @@ def parse_lock(
     return MappingProxyType(
         {locked_name: entries[0] for locked_name, entries in selected.items()}
     )
+
+
+def verify_entries(file_name: str, content: bytes, package: str) -> int:
+    """``pylock-verify``: are all entries allowed? Returns their number.
+
+    Allowed are registry entries (wheels and sdists with hashes, version and
+    index, C3) and one ``directory`` entry for ``package`` itself, as written
+    by ``uv export`` (C2). Nothing else is checked.
+    """
+    if not is_pylock_name(file_name):
+        raise LockRejected(f"[N1] {file_name!r} is not a valid PEP 751 lock file name")
+    try:
+        data = tomllib.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise LockRejected(f"{file_name}: invalid TOML: {error}") from error
+    root = canonicalize_name(package)
+    packages = expect_sequence(data.get("packages", ()), "packages")
+    directories = 0
+    for position, raw in enumerate(packages):
+        table = expect_mapping(raw, f"packages[{position}]")
+        name = canonicalize_name(
+            expect_str(table.get("name"), f"packages[{position}].name")
+        )
+        where = f"packages[{position}] ({name})"
+        if name == root and "directory" in table:
+            directories += 1
+            if directories > 1:
+                raise LockRejected(f"[C2] more than one directory entry for {root}")
+            continue
+        check_entry_sources(table, where)
+        parse_lock_entry(table, name, where)
+    return len(packages)

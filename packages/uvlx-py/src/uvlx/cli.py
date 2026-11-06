@@ -8,18 +8,16 @@ there is deliberately no command line flag for that.
 """
 
 import subprocess
-import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
 import click
 
-from uvlx.clean import clean, render
 from uvlx.environments import default_cache_dir
 from uvlx.errors import VerifyError
 from uvlx.fetch import FetchPolicy
-from uvlx.lock import is_pylock_name
+from uvlx.lock import verify_entries
 from uvlx.root import parse_root_request
 from uvlx.run import prepare
 from uvlx.uv import Uv, find_interpreter, find_uv
@@ -40,79 +38,26 @@ def make_uv(uv_path: str | None, python: str | None, uv_args: Sequence[str]) -> 
 
 
 # --------------------------------------------------------------------------
-# pylock-verify-clean
+# pylock-verify
 # --------------------------------------------------------------------------
 
 
 @click.command(
-    name="pylock-verify-clean",
+    name="pylock-verify",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-@click.argument("wheel", type=click.Path(path_type=Path, dir_okay=False))
 @click.argument("lock", type=click.Path(path_type=Path, dir_okay=False))
-@click.argument("uv_args", nargs=-1, type=click.UNPROCESSED, metavar="[-- UV_ARGS]...")
-@click.option(
-    "--extra",
-    "extras",
-    multiple=True,
-    metavar="NAME",
-    help="An extra of the root wheel to install; repeat for several.",
-)
-@click.option(
-    "--python",
-    metavar="REQUEST",
-    help="Target interpreter, as understood by `uv python find`.",
-)
-@click.option("--uv", "uv_path", metavar="PATH", help="The uv executable to use.")
-@click.option(
-    "-o",
-    "--output",
-    type=click.Path(path_type=Path, dir_okay=False),
-    help="Write the cleaned lock here instead of stdout.",
-)
-@click.option(
-    "--install",
-    is_flag=True,
-    help="Install the cleaned lock into the target interpreter with uv.",
-)
-def verify_clean_main(  # noqa: PLR0913
-    *,
-    wheel: Path,
-    lock: Path,
-    uv_args: tuple[str, ...],
-    extras: tuple[str, ...],
-    python: str | None,
-    uv_path: str | None,
-    output: Path | None,
-    install: bool,
-) -> None:
-    """Verify LOCK for the root WHEEL with uv and write a cleaned lock.
+@click.argument("package")
+def verify_main(lock: Path, package: str) -> None:
+    """Check that LOCK only has entries a locked install of PACKAGE accepts.
 
-    Arguments after `--` are passed to every uv pip call, for example
-    `-- --index-url URL`.
+    For maintainers before publishing a lock: registry wheels and sdists with
+    hashes, plus one directory entry for PACKAGE itself (as `uv export`
+    writes it). Dependencies, versions and indexes are checked at install.
     """
-    if output is not None and not is_pylock_name(output.name):
-        raise click.UsageError(
-            f"output name {output.name!r} must be pylock.toml or "
-            "pylock.<name>.toml (PEP 751), or installers will refuse it"
-        )
-    with reported_errors(), tempfile.TemporaryDirectory() as directory:
-        uv = make_uv(uv_path, python, uv_args)
-        result = clean(wheel, lock, uv, extras)
-        text = render(result)
-        cleaned = Path(directory) / "pylock.toml"
-        if output is not None:
-            cleaned = output
-        cleaned.write_text(text, encoding="utf-8")
-        if install:
-            uv.install(cleaned)
-    if output is None and not install:
-        click.echo(text, nl=False)
-    click.echo(
-        f"ok: {len(result.packages)} package(s) in the cleaned lock; "
-        f"lock entries not needed: [{', '.join(result.unreached)}]",
-        err=True,
-    )
+    with reported_errors():
+        count = verify_entries(lock.name, lock.read_bytes(), package)
+    click.echo(f"ok: {count} entries allowed")
 
 
 # --------------------------------------------------------------------------

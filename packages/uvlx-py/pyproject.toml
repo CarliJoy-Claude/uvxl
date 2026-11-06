@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pylock-verify-clean = "uvlx.cli:verify_clean_main"
+pylock-verify = "uvlx.cli:verify_main"
 uvlx = "uvlx.cli:uvlx_main"
 
 [build-system]

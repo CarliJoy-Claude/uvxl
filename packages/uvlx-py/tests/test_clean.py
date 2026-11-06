@@ -93,7 +93,7 @@ def test_entries_with_false_markers_are_dropped_not_rejected(world: World) -> No
 
 def test_named_lock_file_is_accepted(world: World) -> None:
     path = world.write_lock(world.good_entries(), name="pylock.prod.toml")
-    assert "dep-a" in names(uvlx.clean(world.wheels["app"], path, world.uv()))
+    assert "dep-a" in names(world.clean_file(path))
 
 
 def test_uv_credentials_are_used(world: World) -> None:
@@ -166,24 +166,9 @@ def test_dependency_missing_from_lock_is_rejected(world: World) -> None:
         world.clean(world.replaced("dep-b", None))
 
 
-def test_root_wheel_must_be_the_one_the_index_serves(world: World) -> None:
-    (world.directory / "other").mkdir()
-    other = build_wheel(
-        world.directory / "other",
-        "app",
-        "1.0",
-        ["dep-a>=1"],
-        extras=["x"],
-        salt="different",
-    )
-    world.index.projects["app"] = [ServedFile(other)]
-    with pytest.raises(uvlx.LockRejected, match=r"\[C7\]"):
-        world.clean(world.good_entries())
-
-
-def test_root_missing_from_index_is_rejected(world: World) -> None:
+def test_root_missing_from_index_is_an_error(world: World) -> None:
     del world.index.projects["app"]
-    with pytest.raises(uvlx.LockRejected, match=r"\[C5\]"):
+    with pytest.raises(uvlx.VerifyError, match="uv pip install"):
         world.clean(world.good_entries())
 
 
@@ -191,13 +176,13 @@ def test_root_missing_from_index_is_rejected(world: World) -> None:
 def test_lock_file_name_must_match_pep_751(world: World, name: str) -> None:
     path = world.write_lock(world.good_entries(), name=name)
     with pytest.raises(uvlx.LockRejected, match=r"\[N1\]"):
-        uvlx.clean(world.wheels["app"], path, world.uv())
+        world.clean_file(path)
 
 
 def test_unsupported_lock_version_is_rejected(world: World) -> None:
     path = world.write_lock(world.good_entries(), **{"lock-version": "2.0"})
     with pytest.raises(uvlx.LockRejected, match=r"\[C1\]"):
-        uvlx.clean(world.wheels["app"], path, world.uv())
+        world.clean_file(path)
 
 
 def test_lock_that_excludes_this_environment_is_rejected(world: World) -> None:
@@ -205,4 +190,4 @@ def test_lock_that_excludes_this_environment_is_rejected(world: World) -> None:
         world.good_entries(), environments=["sys_platform == 'nonexistent'"]
     )
     with pytest.raises(uvlx.LockRejected, match=r"\[C1\]"):
-        uvlx.clean(world.wheels["app"], path, world.uv())
+        world.clean_file(path)

@@ -5,12 +5,13 @@ It drives the `uv` CLI, which must be on `PATH`.
 
 See `docs/spec.md` in the workspace root for the rules (rule IDs such as `[C5.3]` appear in error messages).
 
-## `pylock-verify-clean`
+## `pylock-verify`
 
 ```
-pylock-verify-clean WHEEL LOCK [--extra X] [--python REQ] [--uv PATH] [-o pylock.x.toml] [--install] [-- <args for every uv pip call>]
+pylock-verify LOCK PACKAGE
 ```
 
+Checks, before publishing, that LOCK only has entries a locked install accepts: registry wheels and sdists with hashes, version and index, plus one directory entry for PACKAGE itself (as `uv export` writes it).
 Exit codes: 0 ok, 1 error, 2 usage error.
 
 ## `uvlx`

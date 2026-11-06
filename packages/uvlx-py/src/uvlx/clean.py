@@ -19,7 +19,6 @@ warns on stderr. That warning is parsed, which is fragile.
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Final
 
 import tomli_w
@@ -29,10 +28,10 @@ from packaging.version import Version
 from uvlx.candidates import Candidate, parse_candidates, yanked_releases
 from uvlx.errors import LockRejected, VerifyError
 from uvlx.lock import LockEntry, lock_environment, parse_lock
+from uvlx.root import RootWheel
 from uvlx.toml_values import common_verified
 from uvlx.urls import IndexKey, configured_index_for, index_key, strip_user_info
 from uvlx.uv import Uv, marker_environment
-from uvlx.wheel import RootWheel, load_root_wheel
 
 INDEX_LINE_RE: Final = re.compile(r"^--(?:index-url|extra-index-url)\s+(\S+)\s*$")
 CREATED_BY: Final = "pylock-verify-clean"
@@ -64,28 +63,20 @@ class CleanResult:
 def check_root(
     candidate: Candidate, root: RootWheel, configured: Sequence[str]
 ) -> CleanPackage:
-    """Rule C7: the root's wheels, with URL and hash from the index.
-
-    A local root wheel must be served exactly. Otherwise (uv chose the wheel)
-    every wheel the index serves for the root version is kept.
-    """
+    """Rule C7: every wheel the index serves for the root version (uv chose
+    the wheel), with URL and hash from the index."""
     if candidate.version != root.version:
         raise LockRejected(
             f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
         )
     kept: list[CleanWheel] = []
     for wheel in candidate.wheels:
-        verified: Mapping[str, str] | None = None
-        if root.file is None and wheel.hashes:
-            verified = wheel.hashes  # uv chose the wheel: the index's hashes
-        elif root.file is not None and wheel.filename == root.file.filename:
-            verified = common_verified({"sha256": root.file.sha256}, wheel.hashes)
-        if verified is not None:
-            kept.append(CleanWheel(wheel.filename, wheel.url, wheel.size, verified))
+        if wheel.hashes:
+            kept.append(CleanWheel(wheel.filename, wheel.url, wheel.size, wheel.hashes))
     if not kept:
         raise LockRejected(
             f"[C7] the configured indexes serve no hashed wheel for the root "
-            f"{root.name} {root.version} (local file: {root.file})"
+            f"{root.name} {root.version}"
         )
     index = configured_index_for(kept[0].url, configured)
     return CleanPackage(root.name, root.version, index, tuple(kept))
@@ -147,18 +138,6 @@ def root_requirement(root: RootWheel, extras: frozenset[str]) -> str:
     if extras:
         return f"{root.name}[{','.join(sorted(extras))}]=={root.version}"
     return f"{root.name}=={root.version}"
-
-
-def clean(
-    wheel: Path,
-    lock_path: Path,
-    uv: Uv,
-    extras: Sequence[str] = (),
-) -> CleanResult:
-    """Verify ``lock_path`` for a local root ``wheel``; see ``clean_root``."""
-    return clean_root(
-        load_root_wheel(wheel), lock_path.name, lock_path.read_bytes(), uv, extras
-    )
 
 
 def clean_root(

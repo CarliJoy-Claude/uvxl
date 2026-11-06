@@ -286,3 +286,39 @@ def test_options_after_the_command_belong_to_the_command(
     result = uvlx(world, "app", "--help", "--python", "x")
     assert result.exit_code == 3, result.stderr
     assert out.read_text() == "--help --python x"
+
+
+# --------------------------------------------------------------------------
+# C8: uv enforces the hashes of the cleaned lock
+# --------------------------------------------------------------------------
+
+
+def serve_twin(world: World, real_salt: str, twin_salt: str) -> None:
+    """Advertise one dep-b wheel but serve another valid wheel's bytes."""
+    for directory in ("real", "evil-twin"):
+        (world.directory / directory).mkdir()
+    real = build_wheel(world.directory / "real", "dep-b", "2.0", salt=real_salt)
+    twin = build_wheel(world.directory / "evil-twin", "dep-b", "2.0", salt=twin_salt)
+    world.index.projects["dep-b"] = [ServedFile(real, replacement=twin)]
+
+
+def test_tampered_download_fails_the_hash_check(world: World, out: Path) -> None:
+    # Same size, different bytes: uv must get to the hash check.
+    serve_twin(world, real_salt="real", twin_salt="twin")
+    publish_app(world, f"Pylock, {host_lock(world)}")
+    result = uvlx(world, "app")
+    assert result.exit_code == 1
+    assert "hash" in result.stderr.lower()
+    assert not out.exists()
+
+
+def test_tampered_download_of_other_size_fails_the_install(
+    world: World, out: Path
+) -> None:
+    # uv 0.13 compares the locked size first and fails before hashing.
+    serve_twin(world, real_salt="", twin_salt="twin")
+    publish_app(world, f"Pylock, {host_lock(world)}")
+    result = uvlx(world, "app")
+    assert result.exit_code == 1
+    assert "dep-b" in result.stderr
+    assert not out.exists()

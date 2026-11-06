@@ -15,9 +15,8 @@ from uvlx.clean import CleanResult, clean_root, render
 from uvlx.environments import LockedEnvironment, ensure_environment
 from uvlx.fetch import FetchedLock, FetchPolicy, fetch_lock
 from uvlx.pylock_url import find_lock_url
-from uvlx.root import RootRequest, select_root
+from uvlx.root import RootRequest, RootWheel, select_root
 from uvlx.uv import Uv
-from uvlx.wheel import RootWheel
 
 
 @dataclass(frozen=True, slots=True)

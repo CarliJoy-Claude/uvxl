@@ -9,13 +9,24 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from packaging.metadata import Metadata
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
+from packaging.version import Version
 
 from uvlx.errors import VerifyError
 from uvlx.uv import Uv
-from uvlx.wheel import RootWheel, root_from_metadata
+
+
+@dataclass(frozen=True, slots=True)
+class RootWheel:
+    """The root as uv chose it: name, version, extras and raw METADATA."""
+
+    name: str
+    version: Version
+    provides_extra: frozenset[str]
+    metadata: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +58,21 @@ def parse_root_request(text: str) -> RootRequest:
         specifier=requirement.specifier,
         raw_name=requirement.name,
     )
+
+
+def root_from_metadata(raw: bytes, where: str) -> RootWheel:
+    try:
+        metadata = Metadata.from_email(raw, validate=False)
+        name = metadata.name
+        version = metadata.version
+        extras = frozenset(
+            canonicalize_name(extra) for extra in metadata.provides_extra or ()
+        )
+    except (ValueError, ExceptionGroup) as error:
+        raise VerifyError(f"{where}: invalid metadata: {error}") from error
+    if name is None or version is None:
+        raise VerifyError(f"{where}: metadata lacks Name or Version")
+    return RootWheel(canonicalize_name(name), version, extras, raw)
 
 
 def read_metadata(target: Path) -> bytes:

@@ -14,6 +14,7 @@ from pathlib import Path
 import tomli_w
 
 import uvlx
+from uvlx.root import parse_root_request, select_root
 
 UV = shutil.which("uv")
 
@@ -277,15 +278,24 @@ class World:
         path.write_text(tomli_w.dumps(document), encoding="utf-8")
         return path
 
+    def clean_file(
+        self,
+        lock: Path,
+        extras: Sequence[str] = (),
+        index_url: str | None = None,
+    ) -> uvlx.CleanResult:
+        """Verify and clean ``lock`` for ``app``, chosen by uv from the index."""
+        uv = self.uv(index_url)
+        root = select_root(uv, parse_root_request("app"))
+        return uvlx.clean_root(root, lock.name, lock.read_bytes(), uv, extras)
+
     def clean(
         self,
         entries: Sequence[Mapping[str, object]],
         extras: Sequence[str] = (),
         index_url: str | None = None,
     ) -> uvlx.CleanResult:
-        return uvlx.clean(
-            self.wheels["app"], self.write_lock(entries), self.uv(index_url), extras
-        )
+        return self.clean_file(self.write_lock(entries), extras, index_url)
 
     def requested(self) -> tuple[str, ...]:
         return tuple(path for path, _ in self.index.requests)

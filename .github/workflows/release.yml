@@ -1,0 +1,54 @@
+name: Release
+
+# A tag v1.2.3 builds and tests everything (ci.yml) with that version, then
+# publishes uvxl, uvxl-py and uvxl-rs to PyPI with trusted publishing.
+# The publish action signs the distributions (PEP 740 attestations), so PyPI
+# shows their provenance.
+#
+# One-time setup on PyPI, for each of uvxl, uvxl-py and uvxl-rs: add a
+# (pending) trusted publisher for owner CarliJoy, repository uvxl, workflow
+# release.yml, environment pypi.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/uvxl/
+    permissions:
+      id-token: write # trusted publishing and attestations
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Every distribution has the tag's version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ls -l dist
+          for package in uvxl uvxl_py uvxl_rs; do
+            ls "dist/${package}-${version}.tar.gz"
+            ls dist/${package}-${version}-*.whl
+          done
+          if ls dist | grep -v -- "-${version}[-.]"; then
+            echo "distributions with another version" >&2
+            exit 1
+          fi
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true

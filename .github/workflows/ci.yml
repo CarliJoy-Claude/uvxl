@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # release.yml builds and tests through this workflow, with the tag as version.
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version (git tag like v1.2.3); empty for development builds"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RUST_TOOLCHAIN: "1.99"
+  CARGO_TERM_COLOR: always
+  PYTHONUTF8: "1"
+
+jobs:
+  # ------------------------------------------------------------------------
+  # All prek hooks: ruff, mypy, cargo fmt/clippy/test, pytest with Python
+  # coverage (100%) and Rust coverage of an instrumented uvxl-rs.
+  # ------------------------------------------------------------------------
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      # The hooks call `uv run`; the environment is installed once below.
+      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # hatch-vcs needs the history for the version
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy, llvm-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/uvxl-rs
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      # uvxl-rs comes from the instrumented build of the coverage hook, so the
+      # release build is not needed here.
+      - run: uv sync --locked --no-install-package uvxl-rs
+      - run: uv run prek run --all-files --show-diff-on-failure
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: |
+            htmlcov/
+            coverage.xml
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------------
+  # Distributions: sdists and pure wheels, and uvxl-rs wheels per platform.
+  # ------------------------------------------------------------------------
+  build-pure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+      - name: Set the uvxl-rs version from the tag
+        if: inputs.version != ''
+        run: uv run --no-project python scripts/set-rust-version.py "${{ inputs.version }}"
+      - run: uv build --package uvxl --out-dir dist
+      - run: uv build --package uvxl-py --out-dir dist
+      - run: uv build --package uvxl-rs --sdist --out-dir dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-pure
+          path: dist/
+
+  build-rust:
+    name: build-rust (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, target: x86_64, manylinux: auto }
+          - { name: linux-aarch64, os: ubuntu-latest, target: aarch64, manylinux: auto }
+          - { name: musllinux-x86_64, os: ubuntu-latest, target: x86_64-unknown-linux-musl, manylinux: musllinux_1_2 }
+          - { name: musllinux-aarch64, os: ubuntu-latest, target: aarch64-unknown-linux-musl, manylinux: musllinux_1_2 }
+          - { name: macos-arm64, os: macos-latest, target: aarch64-apple-darwin }
+          - { name: macos-x86_64, os: macos-latest, target: x86_64-apple-darwin }
+          - { name: windows-x64, os: windows-latest, target: x64 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Set the uvxl-rs version from the tag
+        if: inputs.version != ''
+        shell: bash
+        run: python scripts/set-rust-version.py "${{ inputs.version }}"
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: packages/uvxl-rs
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          args: --release --locked --out dist
+          sccache: "true"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-rust-${{ matrix.name }}
+          path: packages/uvxl-rs/dist/
+
+  # ------------------------------------------------------------------------
+  # The built wheels, installed into a fresh environment, on every OS and
+  # Python: the whole test suite against the installed packages.
+  # ------------------------------------------------------------------------
+  test-wheels:
+    name: test-wheels (${{ matrix.os }}, ${{ matrix.python }})
+    needs: [build-pure, build-rust]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.12", "3.13", "3.14"]
+        include:
+          - { os: ubuntu-latest, wheel: linux-x86_64 }
+          - { os: macos-latest, wheel: macos-arm64 }
+          - { os: windows-latest, wheel: windows-x64 }
+    steps:
+      - uses: actions/checkout@v7 # the tests and the fake package sources
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-pure
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-rust-${{ matrix.wheel }}
+          path: dist
+      - name: Install the built wheels and the test tools
+        shell: bash
+        run: |
+          uv venv --python "${{ matrix.python }}"
+          uv pip install dist/uvxl-*.whl dist/uvxl_py-*.whl dist/uvxl_rs-*.whl
+          uv pip install pytest tomli-w
+      - name: The wheels are what is installed
+        shell: bash
+        run: |
+          uv pip list
+          uv run --no-sync python -c "import uvxl, uvxl_py; print(uvxl.__file__, uvxl_py.__file__)"
+          uv run --no-sync python -c "import uvxl; assert uvxl.find_rust(), 'uvxl-rs missing'"
+          uv run --no-sync uvxl --help
+          uv run --no-sync pylock-verify --help
+      - run: uv run --no-sync pytest -ra

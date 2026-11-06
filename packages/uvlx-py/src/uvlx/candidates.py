@@ -1,4 +1,8 @@
-"""Reading the candidate pylock that ``uv pip compile`` prints."""
+"""Reading the candidate pylock that ``uv pip compile`` prints.
+
+This is uv's own output, so it is read without validation. The maintainer's
+lock is the untrusted input; ``uvlx.lock`` checks that one carefully.
+"""
 
 import re
 import tomllib
@@ -10,15 +14,8 @@ from urllib.parse import unquote, urlsplit
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from uvlx.errors import LockRejected, VerifyError
-from uvlx.toml_values import (
-    expect_mapping,
-    expect_sequence,
-    expect_str,
-    supported_hashes,
-)
+from uvlx.toml_values import supported_hashes
 
-NON_WHEEL_SOURCES: Final = ("vcs", "directory", "archive", "sdist")
 YANKED_RE: Final = re.compile(r"`([^`=\s]+)==([^`\s]+)` is yanked")
 
 
@@ -43,46 +40,26 @@ class CandidateLock:
     requires_python: str | None
 
 
-def _parse_wheel(raw: object, where: str) -> CandidateWheel:
-    wheel = expect_mapping(raw, where)
-    url = expect_str(wheel.get("url"), f"{where}.url")
-    size = wheel.get("size")
-    if not isinstance(size, int):
-        size = None
-    return CandidateWheel(
-        filename=unquote(urlsplit(url).path.rpartition("/")[2]),
-        url=url,
-        size=size,
-        hashes=supported_hashes(wheel.get("hashes", {}), f"{where}.hashes"),
-    )
-
-
 def parse_candidates(text: str) -> CandidateLock:
     """Read the pylock that ``uv pip compile --format pylock.toml`` printed."""
-    try:
-        data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as error:
-        raise VerifyError(f"uv printed an invalid pylock: {error}") from error
-    candidates: list[Candidate] = []
-    for position, raw in enumerate(expect_sequence(data.get("packages", ()), "uv")):
-        where = f"uv packages[{position}]"
-        table = expect_mapping(raw, where)
-        name = canonicalize_name(expect_str(table.get("name"), f"{where}.name"))
-        for source in NON_WHEEL_SOURCES:
-            if source in table:
-                raise LockRejected(f"[C5.4] uv proposes a {source} for {name}")
-        wheels = tuple(
-            _parse_wheel(wheel, f"{where}.wheels[{number}]")
-            for number, wheel in enumerate(
-                expect_sequence(table.get("wheels", ()), f"{where}.wheels")
-            )
+    data = tomllib.loads(text)
+    candidates = tuple(
+        Candidate(
+            name=canonicalize_name(package["name"]),
+            version=Version(package["version"]),
+            wheels=tuple(
+                CandidateWheel(
+                    filename=unquote(urlsplit(wheel["url"]).path.rpartition("/")[2]),
+                    url=wheel["url"],
+                    size=wheel.get("size"),
+                    hashes=supported_hashes(wheel.get("hashes", {}), "uv hashes"),
+                )
+                for wheel in package.get("wheels", ())
+            ),
         )
-        version = Version(expect_str(table.get("version"), f"{where}.version"))
-        candidates.append(Candidate(name=name, version=version, wheels=wheels))
-    requires_python = data.get("requires-python")
-    if not isinstance(requires_python, str):
-        requires_python = None
-    return CandidateLock(tuple(candidates), requires_python)
+        for package in data.get("packages", ())
+    )
+    return CandidateLock(candidates, data.get("requires-python"))
 
 
 def yanked_releases(stderr: str) -> frozenset[tuple[str, Version]]:

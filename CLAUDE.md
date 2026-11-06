@@ -132,106 +132,80 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 ## 4. Repository layout (uv workspace)
 
+Final home: https://github.com/CarliJoy/uvxl (MIT). Work happens on the fork https://github.com/CarliJoy-Claude/uvxl (git remote `fork`).
+
 ```
 .
-├── CLAUDE.md
-├── pyproject.toml              # workspace root, virtual (no [project] build), shared tool config
+├── CLAUDE.md, README.md, CHANGELOG.md, LICENSE
+├── pyproject.toml              # virtual workspace root: dev group, ruff, mypy, pytest, coverage
 ├── uv.lock
-├── docs/
-│   ├── spec.md                 # the PoC spec (section 3 of this file, kept in sync)
-│   └── uv-findings.md          # section 6 of this file, extended as we learn
+├── .pre-commit-config.yaml     # prek hooks: everything CI checks
+├── .github/workflows/          # ci.yml (checks, wheels, wheel tests), release.yml (PyPI)
+├── docs/                       # spec.md (section 3), uv-findings.md (section 6)
+├── scripts/                    # rust-coverage.sh, set-rust-version.py
+├── tests/                      # all tests (one conftest.py and helpers.py)
 └── packages/
-    ├── uvxl-py/                # Python PoC (first)
-    │   ├── pyproject.toml      # build backend: uv_build (or hatchling)
-    │   ├── src/uvxl_py/
-    │   └── tests/
-    └── uvxl-rs/                # Rust PoC (later), built as a wheel with maturin (bindings = "bin")
-        ├── pyproject.toml
-        ├── Cargo.toml
-        └── src/
+    ├── uvxl/                   # meta package: `uvxl` and `pylock-verify` commands, picks a backend
+    ├── uvxl-py/                # Python backend (import uvxl_py, command uvxl-py)
+    └── uvxl-rs/                # Rust backend on uv's crates (binary uvxl-rs), maturin bindings = "bin"
 ```
 
-- Root `pyproject.toml`: `[tool.uv.workspace] members = ["packages/*"]`, plus `[dependency-groups] dev = [...]` (ruff, mypy, pytest, maturin later) and shared `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`.
-- Names are provisional: distribution `uvxl-py`, import package `uvxl_py`, console scripts `uvxl-py` and `pylock-verify`; the meta package `uvxl` provides the `uvxl` command.
-  The Rust wheel must not clash: distribution `uvxl-rs`, binary name to decide (for example `uvxl-rs` until one wins).
-- Dependencies are declared **only** in each package's `pyproject.toml`. No PEP 723 headers in package code (the earlier single-file script declared them twice; that was a mistake).
-- Rust PoC: maturin with `bindings = "bin"` turns the binary into a wheel, so `uv tool install` and `uvx` can use it. The uv crates are on crates.io (0.0.98 matched uv 0.13.6) but are "internal component crates" with no stability promise: pin one exact version family. uv pins Rust 1.99 in its `rust-toolchain.toml`.
+- `uvxl` depends on `uvxl-py`; `uvxl[rust]` adds `uvxl-rs`. `uvxl` runs `uvxl-rs` if it is installed in the same environment (scripts directory, not PATH: `uv tool install` links only uvxl's own commands), otherwise `uvxl-py` in-process. `UVXL_BACKEND=rust|python` forces one; an unknown value or a missing backend is an error.
+- Packaging: `uvxl` and `uvxl-py` build with hatchling and hatch-vcs (version from the git tag, `raw-options.root = "../.."`); `uvxl-rs` with maturin, version from `Cargo.toml`, set from the tag by `scripts/set-rust-version.py` in releases. Each package has a copy of `LICENSE`.
+- Dependencies are declared **only** in each package's `pyproject.toml`. No PEP 723 headers in package code.
+- uv crates: pinned `=0.0.99` (uv 0.13.7), "internal component crates" without stability promise; Rust 1.99.
+- The project environment may live elsewhere (`UV_PROJECT_ENVIRONMENT`, here `/home/dev/venv`); `uv sync` rebuilds `uvxl-rs` when its Rust sources change (uv `cache-keys`).
 
-## 5. Python PoC: current state and plan
+## 5. Current state
 
-### 5.1 Existing code (migrated 2026-11-05, `uvxl` added 2026-11-05, simplified 2026-11-06)
+### 5.1 Python backend `uvxl-py`
 
-- The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvxl-py/src/uvxl_py/`, split into modules:
-  `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
-- Added for `uvxl`: `root` (uv picks the root, `RootWheel` from METADATA, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify` = `uvxl_py.cli:verify_main`, `uvxl-py` = `uvxl_py.cli:uvxl_main`).
-- CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
-- Tests in `tests/` at the workspace root (one `conftest.py` and `helpers.py` for all packages): `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvxl.py`. All passing with uv 0.13.7.
-- An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
-- `packages/uvxl-rs` is a placeholder binary (exits 2) that already builds as a wheel with maturin.
+Modules in `packages/uvxl-py/src/uvxl_py/`: `errors`, `toml_values` (typed TOML access, hash tables), `urls` (origins, index keys, `--allow-insecure-host` matching), `venv` (bin or Scripts via `sysconfig`), `uv` (uv CLI runner, target interpreter, markers), `lock` (N1, C1 to C4, `pylock-verify`), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render), `root` (uv picks the root, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, httpx2), `environments` (cache, C8, P1), `run` (the flow), `cli` (click).
 
-### 5.2 How v2 works (uv CLI as engine)
+uv has no Python API, so the backend drives the CLI:
 
-uv has no Python API (the PyPI `uv` package only ships the binary), so the PoC drives the CLI:
+1. **Root (F7):** `uv pip install --no-deps --only-binary :all: --target <tmp> REQ`: uv picks the wheel, its METADATA holds the Pylock URL. From then on the root is bound by name and version: the cleaned lock lists every wheel the index serves for that version, without `index` (uv then uses the file URL minus the file name, which only affects its cache key). Trade-off: wheels of one version with different METADATA; accepted for the PoC.
+2. **URL:** Project-URL headers via the email parser (duplicates kept for M2), labels normalized, https only (http only for `--allow-insecure-host` hosts), N1, fragment hashes for pinned mode, any other fragment parameter fails (M4).
+3. **Fetch:** httpx2, redirects (limit 5), a request hook refusing non-https hops except to insecure hosts, 1 MiB, 30 s, pinned hash before parsing. **No credentials** (F3 is Rust only).
+4. **Verify and clean:** the lock's pins as constraints for `uv pip compile --only-binary :all: --format pylock.toml` (constraints never add packages: C5, C6), then C5.1, C5.3, C5.4 (hashes, yanked from uv's stderr warning), C5.5, C7 against uv's candidate pylock. C5.2 and the root version hold by construction (`==` pins). Configured indexes come from `uv pip compile --emit-index-url`. Markers are evaluated for the **target** interpreter with our own `packaging` on its path.
+5. **Environment:** `<uv cache dir>/uvxl/envs/<sha256(interpreter + cleaned lock)[:32]>` via `uv venv --clear` and `uv pip install -r pylock.uvxl.toml`; receipt `uvxl-receipt.json` (P1) written last. The lock is fetched and verified on every run.
+6. **Run:** the console script with a subprocess, its exit code passed on.
 
-1. Python parses the lock with `tomllib` and checks N1, C1 to C4.
-2. `uv pip compile - --constraints <tmp>/constraints.txt --python <target> --format pylock.toml --only-binary :all: --no-header`: the root requirement (`app[extras]==version`) on stdin, the lock's pins (`name==version` lines) in a temp file. Constraints never add packages, which gives C5 and C6 for free.
-3. Python parses uv's candidate pylock and checks it against the lock: every package must be locked with the same version (C5.1, C5.2), the lock's `index` must be a configured index (C5.3), only wheels whose hash the lock lists are kept (C5.4, C5.5), and the root keeps the index's wheels of its version (C7).
-4. A second `uv pip compile --no-deps --emit-index-url --format requirements.txt` lists the configured indexes (that flag only works in requirements format).
-5. The cleaned lock is written with `tomli_w` and installed with `uv pip install -r` (see 5.3).
-6. Markers are evaluated for the **target** interpreter (found with `uv python find`, queried with our own `packaging.markers.default_environment()` on its path), not the one running the tool.
+CLI: uvx's option names. `--from`, `-p/--python`; resolver options (indexes, `--index-strategy`, `--keyring-provider`, `--resolution`, `--prerelease`, `--exclude-newer`) go to the `uv pip` calls, global options (cache, offline, insecure hosts, config, Python discovery) to every uv call, `-q`/`-v` only to calls whose output is not read. `--with`, `--with-editable`, `--with-requirements`, `--constraints`, `--overrides` are refused. Errors exit 1, usage errors 2.
 
-`pylock-verify LOCK PACKAGE` (for maintainers, before publishing a lock) is a static check of the file only: N1, and every entry is a registry wheel/sdist entry with hashes, version and index (C3), except one `directory` entry for PACKAGE itself (C2). No uv, no network; everything else is checked at install.
-Exit codes: 0 ok, 1 error, 2 usage error.
+`pylock-verify LOCK PACKAGE` (provided by `uvxl`, code in `uvxl_py`): static check of a lock before publishing: N1, every entry a registry wheel/sdist with hashes, version and index (C3), except one `directory` entry for PACKAGE itself (C2).
 
-### 5.3 `uvxl` (run a package with its linked lock, like `uvx`): done
+### 5.2 Rust backend `uvxl-rs`
 
-`uvxl [--from REQ] [--python X] [--uv-arg ARG] [--cache-dir DIR] COMMAND [ARGS]...`
-Options after COMMAND belong to the command; indexes come from uv's own settings, `UV_*` variables or `--uv-arg=--index-url=URL`. Errors exit 1; once the command runs, its own exit code.
+A wrapper on uv's crates, about 1,200 lines, about 300 of them copied glue marked `COPIED from <file> (uv 0.13.7)` / `END COPIED` (changes `CHANGED`).
 
-1. **Root (F7):** uv chooses: `uv pip install --no-deps --only-binary :all: --target <tmp> REQ` installs the wheel uv prefers for the target interpreter, and its METADATA holds the Pylock URL.
-   From then on the root is bound by name and version: C7 puts every wheel the index serves for that version (URL and hash from the index) into the cleaned lock.
-   The root entry has no `index` (PEP 751: SHOULD only); uv then uses the file URL minus the file name, which only affects its cache key.
-   Trade-off: if wheels of one version had different METADATA, the Pylock URL could come from another wheel than the one installed later. uv makes the same choice both times, so this is accepted for the PoC.
-2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail (no override flag in the PoC).
-   No `Pylock` URL fails with `[M5]`.
-3. **Fetch:** httpx2 with `follow_redirects` (limit 5), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. Pinned hash checked before parsing.
-   No credentials are sent (F3 is left to the Rust version; for it: httpx2 would drop `Authorization` on cross-origin redirects and never reads netrc by itself).
-4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`.
-5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>` (cache: `--cache-dir`, `$XDG_CACHE_HOME/uvxl` or `~/.cache/uvxl`), built with `uv venv --clear` and `uv pip install -r pylock.uvxl.toml`. The cleaned lock stays in the environment.
-   The receipt `uvxl-receipt.json` (P1: lock URL, mode, lock sha256, fetch time, root name and version) is written last; without one the environment is created again.
-   The lock is fetched and verified on every run (it is mutable); only the environment is reused.
-6. **Run:** `<env>/bin/<command>` with a subprocess; the default command is the requirement's name as typed.
+- `main.rs`: parses `["uv", "tool", "uvx", args...]` with `uv_cli::Cli`, so all uvx options work; runtime setup copied from `crates/uv/src/lib.rs`.
+- `glue.rs`: settings preamble, registry client, `resolve()` copied from `resolve_environment` with a `DependencyMode` (`Direct` for the root like `uv pip install --no-deps`, `Transitive` with the lock's pins as constraints), wheels only (`NoBuild::All`); `registry_dists` adapts uv's resolution types.
+- `pylock_url.rs` (M1 to M5, N1) and `lock.rs` (C1 to C4): ports of the Python rules; markers via `MarkerTree::evaluate_pep751`; the lock has its own serde struct (uv's `PylockToml` keeps markers, sources and hashes private).
+- `locked.rs`: the flow. Root METADATA from the PEP 658 file through `RegistryClient::uncached_client` (index auth; no PEP 658: not supported). Lock fetch: a URL covered by a configured index (F3 rule) through the same client, otherwise a client with `AuthIntegration::NoAuthMiddleware`; a response that is still a redirect is `[F4]`. The resolution is checked (C5.1, C5.3, C5.4, C7, yanked from `File.yanked`) and rebuilt as a `Resolution` with the verified hashes, then `CachedEnvironment::from_locked_resolution` installs and caches it; the script runs with `run_to_completion`.
+- Same refusals and `--allow-insecure-host` rule as the Python backend. P1 is skipped (uv caches the environment by the resolution).
+- Differences to the Python backend (tested): index credentials for a covered lock (F3), an invalid pinned digest is `[M4]` (Python: `[F5]`), a root whose index states no hash is `[C7]` (Python: uv computes the hash).
+- Not done: root without PEP 658 metadata, `-v` logging (uv's tracing setup is private to the `uv` binary crate). Out of scope: uv's client follows https to http redirects (upstream).
 
-Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is no command line flag for it.
+### 5.3 Tests and coverage
 
-Open:
-- `uvxl install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
-- Windows:
-  - Virtual environments use `Scripts\python.exe` and `Scripts\<command>.exe` instead of `bin/` (`Uv.create_venv`, `environments.py`).
+- All tests in `tests/`, running **real uv** against a fake PEP 691 index on 127.0.0.1 (`helpers.FakeIndex`): JSON pages, PEP 658 metadata (optional, other hash algorithms), several wheels per project, `yanked`, `replacement` bytes for tamper tests, pages without hashes or sizes, failing pages (500), Basic auth, `extra_files` (hosted locks) and `redirects`; a second `FakeIndex` is a foreign origin.
+- `test_backends.py`: everything both backends support, run through `python -m uvxl` with `UVXL_BACKEND=python` and `=rust`; assertions only on exit code, the test script's output, rule IDs, index requests and the environment path. `test_uvxl_py.py` and `test_uvxl_rs.py`: behaviour of one backend only. `test_meta.py`: backend selection, also in real throwaway environments without a backend. `test_clean.py`, `test_cli.py`, `test_pylock_url.py`: Python units.
+- **Coverage, no mocks:** Python 100% line and branch (`coverage` with `patch = subprocess`); Rust 100% lines for `pylock_url.rs`, `lock.rs`, `locked.rs`, measured from the same pytest run with an instrumented binary (`scripts/rust-coverage.sh`, cargo-llvm-cov; `glue.rs` and `main.rs` reported, not gated). Unreachable defensive branches are removed rather than faked.
+- Built test wheels need METADATA, WHEEL and RECORD; tamper tests need a *valid* wheel of the same size to reach the hash check.
+- Fixture environment: `UV_NO_CACHE=1` (removed where environments must persist), temp `HOME` and XDG directories, no `NETRC`, `chdir` to tmp, `no_proxy=127.0.0.1`. The fake index is plain http: tests pass `--allow-insecure-host 127.0.0.1`.
+- The suite also runs against **installed wheels** (CI `test-wheels`; locally: build, install into a fresh venv, run `pytest`).
 
-### 5.5 Rust spike `uvxl-rs` (2026-11-06): works end to end
+### 5.4 CI and releases
 
-`packages/uvxl-rs` is a wrapper on uv's crates (`=0.0.99` = uv 0.13.7), about 1,200 lines, of which about 300 are copied glue marked `COPIED from <file> (uv 0.13.7)` / `END COPIED` (changes marked `CHANGED`).
+- `ci.yml`: `checks` (prek on Linux), `build-pure`, `build-rust` (maturin-action: Linux x86_64/aarch64 manylinux and musllinux, macOS arm64/x86_64, Windows x64), `test-wheels` (Linux, macOS, Windows × Python 3.12 to 3.14, the built wheels in a fresh environment, the whole suite).
+- `release.yml`: on `v*` tags, `ci.yml` with the tag as version, a version check, then PyPI trusted publishing with PEP 740 attestations (environment `pypi`; trusted publishers must be configured on PyPI for `uvxl`, `uvxl-py`, `uvxl-rs`).
+- The fork's token can push and read runs and logs, not cancel or re-run them.
 
-- `main.rs`: parses `["uv", "tool", "uvx", args...]` with `uv_cli::Cli` (uv's own `uvx` does the same), so all `uvx` options work. Runtime setup copied from `crates/uv/src/lib.rs`.
-- `glue.rs`: settings preamble (config files, `GlobalSettings`, `CacheSettings`, `ToolRunSettings::resolve`, client builder) and `resolve()`, copied from `resolve_environment` with a `DependencyMode` parameter: `Direct` picks the root like `uv pip install --no-deps`, `Transitive` resolves with the lock's pins as constraints.
-- `pylock_url.rs` (M1 to M5, N1) and `lock.rs` (N1, C1 to C4): ports of the Python modules; markers via `MarkerTree::evaluate_pep751`. uv's `PylockToml` keeps markers, sources and hashes private, so the lock has its own serde struct.
-- `locked.rs`: the flow. Root METADATA from the PEP 658 file through `RegistryClient::uncached_client` (index auth); no PEP 658: not supported yet. Lock fetch: covered URL (F3 rule) through the same client, otherwise a client with `AuthIntegration::NoAuthMiddleware`. The resolver output is checked (C5.1 to C5.4, C7, yanked from `File.yanked`) and rebuilt as a `Resolution` (`Node::Dist` with the verified hashes, only the wheel uv picked), then `CachedEnvironment::from_locked_resolution` installs and caches it (the pattern of `uv-project-commands/src/check.rs`), and the script runs with `run_to_completion`.
-- Plain http lock URLs (M3) are accepted only for hosts in uv's `--allow-insecure-host` (`UV_INSECURE_HOST`); the tests pass `--allow-insecure-host 127.0.0.1`. No extra test switch.
-- Refused (they would bypass the lock): `--with`, `--with-editable`, `--with-requirements`, `--constraints`, `--overrides`. Checked first, before any network access.
-- P1 (receipt) is skipped in the Rust version: uv caches the environment itself (`CachedEnvironment`), keyed by the resolution.
-- Not done: root without PEP 658 metadata (fallback: download the wheel), Windows checks, `-v` logging (uv's tracing setup is in the private `logging` module of the `uv` binary crate).
-- Out of scope: uv's client follows https to http redirects (F4); treat as an upstream issue.
+### 5.5 Open
 
-### 5.4 Testing approach
-
-- Tests run **real `uv`** against a local fake PEP 691 index (`http.server` on 127.0.0.1) serving JSON pages, PEP 658 `.metadata`, multiple wheels per project, a `yanked` flag, a `replacement` file (valid wheel with different bytes, for hash-tamper tests) and optional Basic auth.
-- Built test wheels need METADATA, WHEEL and RECORD, or uv refuses them.
-- Tamper tests must serve a *valid* wheel with different bytes; a broken zip fails before the hash check.
-- Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
-- Tests that need `uv` are skipped when it is not on PATH; `test_uvxl_rs.py` runs the Rust binary against the same fake index and is skipped when it is not built (`$CARGO_TARGET_DIR/debug/uvxl-rs`).
-- Pass `--allow-insecure-http`-style overrides only in tests; production code requires https.
-- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVXL_TEST_OUT` and exits 3.
+- `uvxl install` (persistent locked install) as a stand-in for `uv tool install --locked`.
+- Rust: root without PEP 658 metadata; `-v` logging.
 
 ## 6. uv findings (tested with uv 0.11.32, source read at 0.13.6 / commit 564a207)
 
@@ -285,24 +259,25 @@ Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting t
 ### 8.2 Style
 
 - Target **Python 3.12** (`requires-python = ">=3.12"`).
-- Format with **`ruff format`**; lint with `ruff check` (rules E, F, I, UP, B, SIM, RUF, PL; `SIM108` and `PLR2004` ignored). Type-check with **`mypy --strict`**. All must pass before a change is done.
+- Format with **`ruff format`**; lint with `ruff check` using uvrev's rule set (see `pyproject.toml`; `SIM108` ignored because of the no-ternary rule). Type-check with **`mypy --strict`**. Run everything with `uv run prek run --all-files` before a change is done.
+- **Coverage 100%** (Python line and branch, Rust lines of the PoC's own files), without mocks. Remove unreachable branches instead of faking them; test real behaviour with the fake index.
 - **No ternary operator** (`x if c else y`): use explicit `if`/`else` blocks. Explicit over implicit.
 - **Immutables everywhere:** `Mapping`, `Sequence`, `Set` in signatures; tuples and frozensets in code; `@dataclass(frozen=True, slots=True)`.
 - **Returned mappings are wrapped in `types.MappingProxyType`** (switch to `frozendict` once the target is Python 3.15+).
 - Error messages carry the spec rule ID in brackets.
 - Exceptions: `VerifyError` (any error) and `LockRejectedError` (the lock cannot be used). The rule ID in the message tells the rest. Exit codes are not important in the PoC.
 - Markdown: start every sentence on a new line. In prose, do not use the en dash `–`; use `:` instead.
-- Rust (later): `cargo fmt`, `cargo clippy -- -D warnings`, same rule IDs in errors.
+- Rust: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, same rule IDs in errors. Mark code copied from uv (`COPIED from` / `END COPIED` / `CHANGED`).
 
 ## 9. Commands
 
 ```
-uv sync                                   # whole workspace
-uv run pytest                             # Python tests (need uv on PATH)
-uv run ruff format && uv run ruff check
-uv run mypy packages/uvxl-py
-uv build --package uvxl-py                # wheel
-uv build --package uvxl-rs                # wheel (maturin backend, needs cargo)
+uv sync                                   # whole workspace; builds uvxl-rs with maturin
+uv run prek run --all-files               # all checks: ruff, mypy, cargo fmt/clippy/test, tests, coverage
+uv run pytest                             # tests only (need uv on PATH)
+scripts/rust-coverage.sh                  # Rust coverage from the pytest suite (cargo-llvm-cov)
+uv build --package uvxl                   # also uvxl-py; uvxl-rs builds a wheel for this platform
+python scripts/set-rust-version.py v1.2.3 # set uvxl-rs's version (releases)
 ```
 
 ## 10. References

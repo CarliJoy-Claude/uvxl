@@ -1,11 +1,12 @@
 # uvxl-py
 
-Python proof of concept for installing a package with the lock file linked from its `Pylock` Project-URL.
+Python backend of [uvxl](https://github.com/CarliJoy/uvxl): installs and runs a package with the lock file linked from its `Pylock` Project-URL.
 It drives the `uv` CLI, which must be on `PATH`.
+Usually used through the `uvxl` command (package `uvxl`), which picks this backend if `uvxl-rs` is not installed.
 
 See `docs/spec.md` in the workspace root for the rules (rule IDs such as `[C5.3]` appear in error messages).
 
-## `pylock-verify`
+## `pylock-verify` (command provided by `uvxl`)
 
 ```
 pylock-verify LOCK PACKAGE

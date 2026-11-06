@@ -4,7 +4,6 @@ import re
 import tomllib
 from collections.abc import Mapping, Set
 from dataclasses import dataclass
-from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
@@ -120,23 +119,21 @@ def parse_lock_entry(table: Mapping[str, object], name: str, where: str) -> Lock
     return LockEntry(name, version, index, wheel_hashes)
 
 
-def load_lock(
-    path: Path, root_name: str, environment: Environment
-) -> Mapping[str, LockEntry]:
-    """Read a lock file; see ``parse_lock``."""
-    return parse_lock(path.name, path.read_bytes(), root_name, environment)
+def read_lock_toml(file_name: str, content: bytes) -> Mapping[str, object]:
+    """Rule N1 on the file name, then the TOML document."""
+    if not is_pylock_name(file_name):
+        raise LockRejected(f"[N1] {file_name!r} is not a valid PEP 751 lock file name")
+    try:
+        return tomllib.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise LockRejected(f"{file_name}: invalid TOML: {error}") from error
 
 
 def parse_lock(
     file_name: str, content: bytes, root_name: str, environment: Environment
 ) -> Mapping[str, LockEntry]:
     """Parse and check a lock; return the applicable entry per package name."""
-    if not is_pylock_name(file_name):
-        raise LockRejected(f"[N1] {file_name!r} is not a valid PEP 751 lock file name")
-    try:
-        data = tomllib.loads(content.decode("utf-8"))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        raise LockRejected(f"{file_name}: invalid TOML: {error}") from error
+    data = read_lock_toml(file_name, content)
     check_lock_header(data, environment)  # C1
 
     selected: dict[str, list[LockEntry]] = {}
@@ -174,12 +171,7 @@ def verify_entries(file_name: str, content: bytes, package: str) -> int:
     index, C3) and one ``directory`` entry for ``package`` itself, as written
     by ``uv export`` (C2). Nothing else is checked.
     """
-    if not is_pylock_name(file_name):
-        raise LockRejected(f"[N1] {file_name!r} is not a valid PEP 751 lock file name")
-    try:
-        data = tomllib.loads(content.decode("utf-8"))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-        raise LockRejected(f"{file_name}: invalid TOML: {error}") from error
+    data = read_lock_toml(file_name, content)
     root = canonicalize_name(package)
     packages = expect_sequence(data.get("packages", ()), "packages")
     directories = 0

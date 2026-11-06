@@ -8,7 +8,7 @@
 3. The candidate is checked against the lock: every package must be locked
    with the same version (C5.1, C5.2), the lock's index must be a configured
    one (C5.3), and only wheels whose hash the lock lists are kept (C5.4, C5.5).
-   The root must be the given wheel (C7).
+   The root keeps every wheel the index serves for its version (C7).
 4. The cleaned lock is rendered; ``Uv.install`` installs it with hash
    enforcement (C8).
 

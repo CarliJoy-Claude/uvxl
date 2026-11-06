@@ -32,6 +32,9 @@ jobs:
   # ------------------------------------------------------------------------
   checks:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash # -eo pipefail: a failing pytest is not hidden by `tee`
     env:
       # The hooks call `uv run`; the environment is installed once below.
       UV_NO_SYNC: "1"
@@ -56,12 +59,44 @@ jobs:
       # uvxl-rs comes from the instrumented build of the coverage hook, so the
       # release build is not needed here.
       - run: uv sync --locked --no-install-package uvxl-rs
-      - run: uv run prek run --all-files --show-diff-on-failure
+      - name: Lint and type checks (prek, without the test hooks)
+        run: uv run prek run --all-files --show-diff-on-failure
+        env:
+          SKIP: tests,coverage-report # run as visible steps below
+      - name: pytest (Python and Rust coverage)
+        run: |
+          uv run coverage erase
+          scripts/rust-coverage.sh coverage run -m pytest -ra --junitxml=junit.xml | tee rust-coverage.txt
+      - name: Python coverage report
+        if: always()
+        run: |
+          uv run coverage combine
+          uv run coverage html --fail-under=0
+          uv run coverage xml --fail-under=0
+          uv run coverage report | tee python-coverage.txt
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Tests"
+            echo '```'
+            grep -E "passed|failed|error" rust-coverage.txt | tail -n 1 || true
+            echo '```'
+            echo "## Python coverage"
+            echo '```'
+            cat python-coverage.txt 2>/dev/null || echo "no report"
+            echo '```'
+            echo "## Rust coverage (own code, gated at 100% of lines)"
+            echo '```'
+            sed -n '/^Filename/,/^TOTAL/p' rust-coverage.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: coverage
+          name: test-reports
           path: |
+            junit.xml
             htmlcov/
             coverage.xml
           if-no-files-found: ignore
@@ -169,4 +204,5 @@ jobs:
           uv run --no-sync python -c "import uvxl; assert uvxl.find_rust(), 'uvxl-rs missing'"
           uv run --no-sync uvxl --help
           uv run --no-sync pylock-verify --help
-      - run: uv run --no-sync pytest -ra
+      - name: pytest (against the installed wheels)
+        run: uv run --no-sync pytest -ra

@@ -15,3 +15,5 @@ htmlcov/
 .coverage.*
 coverage.xml
 junit-*.xml
+junit.xml
+*-coverage.txt

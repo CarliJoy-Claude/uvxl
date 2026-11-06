@@ -324,6 +324,11 @@ async fn fetch_lock(
         anonymous.for_host(&url).get(url.clone()).send().await
     }
     .with_context(|| format!("[F6] fetching the lock from {url} failed"))?;
+    // uv's client stops after its redirect limit and returns the last
+    // redirect response itself; that is not a lock.
+    if response.status().is_redirection() {
+        bail!("[F4] too many redirects for {url}");
+    }
     let bytes = response
         .error_for_status()
         .with_context(|| format!("[F6] fetching the lock from {url} failed"))?

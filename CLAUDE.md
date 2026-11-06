@@ -163,7 +163,7 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 
 - The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvlx-py/src/uvlx/`, split into modules:
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `wheel` (root wheel from a file or from METADATA bytes), `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
-- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M5, N1), `credentials` (F3, keyring), `fetch` (F4 to F6), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
+- Added for `uvlx`: `root` (pick the root, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify-clean` = `uvlx.cli:verify_clean_main`, `uvlx` = `uvlx.cli:uvlx_main`).
 - CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
 - Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvlx.py`. All passing with uv 0.13.7.
 - An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
@@ -194,8 +194,7 @@ Options after COMMAND belong to the command. Exit codes as above; once the comma
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
    No `Pylock` URL fails with `[M5]`.
 3. **Fetch:** httpx2 with `follow_redirects` (limit 5; it drops `Authorization` once a redirect leaves the origin), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. httpx2 never reads netrc by itself. Pinned hash checked before parsing.
-   Credentials (`credentials.py`) only if a configured index covers the URL: same origin, and the path under the index URL with a trailing `simple` or `+simple` segment removed (so devpi's `/user/index/+simple/` covers `/user/index/+f/...`). This devpi handling is an interpretation of F3: confirm it.
-   Source: **keyring only**, like uv's subprocess provider (`crates/uv-auth/src/keyring.rs`): with the index URL's user name `keyring get <index-url> <user>`, then `keyring get <host:port> <user>`; without one `keyring get <index-url> --mode creds`. A password in the index URL, netrc and uv's credential store are not used.
+   No credentials are sent (F3 is left to the Rust version).
 4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`; `clean(wheel_path, lock_path, ...)` remains for `pylock-verify-clean`.
 5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>`, built with `uv venv` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
    The receipt `uvlx-receipt.json` (P1: lock URL, final URL, mode, pins, lock sha256, fetch time, root file and hashes, cleaned-lock sha256, interpreter) is written last; an environment without one is rebuilt.
@@ -209,7 +208,7 @@ Open:
 - Windows:
   - `Uv.compile` passes constraints through `os.pipe`, `pass_fds` and `/dev/fd/N`: use a temp constraints file instead.
   - Virtual environments use `Scripts\python.exe` and `Scripts\<command>.exe` instead of `bin/` (`Uv.create_venv`, `environments.py`).
-  - Tests: the fake `keyring` is a shebang script (needs a `.cmd` wrapper), `PATH` is joined with `:` (use `os.pathsep`), `fresh_venv` uses `bin/python`.
+  - Tests: `fresh_venv` uses `bin/python`.
 
 ### 5.4 Testing approach
 
@@ -219,7 +218,7 @@ Open:
 - Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
 - Tests that need `uv` are skipped when it is not on PATH.
 - Pass `--allow-insecure-http`-style overrides only in tests; production code requires https.
-- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. A fake `keyring` executable (`helpers.FakeKeyring`, first on `PATH`, `UV_KEYRING_PROVIDER=subprocess` so uv uses it too) logs its calls; tests never use `uv auth`. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
+- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
 
 ## 6. uv findings (tested with uv 0.11.32, source read at 0.13.6 / commit 564a207)
 
@@ -263,7 +262,7 @@ Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting t
 - **Commit each logical step** separately (refactor, feature, rule change, docs), so the git history shows what was done. Run the checks before each commit.
 - Command line interfaces use **click** (not argparse).
 - HTTP uses **httpx2** (not urllib).
-- F3 in the Python PoC: credentials for the lock come **only from keyring** (`keyring get`, the way uv's subprocess keyring provider does it), and only for a lock URL covered by a configured index. Tests use a fake `keyring` executable, never `uv auth`.
+- **No authentication in the Python PoC:** the lock is fetched without any credentials, so it must be readable without login. F3 (credentials for privately hosted locks) is implemented only in the Rust version, which can use uv's internal credential handling.
 
 ### 8.2 Style
 

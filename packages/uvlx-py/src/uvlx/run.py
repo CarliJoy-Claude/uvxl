@@ -2,8 +2,7 @@
 
 1. Pick the root wheel and read its METADATA (``uvlx.root``, F7).
 2. Find the ``Pylock`` URL (``uvlx.pylock_url``, M1 to M4, N1).
-3. Fetch the lock, with keyring credentials only for a covering index
-   (``uvlx.credentials``, ``uvlx.fetch``, F3 to F6).
+3. Fetch the lock, without credentials (``uvlx.fetch``, F4 to F6).
 4. Verify and clean it for this root (``uvlx.clean``, C1 to C7).
 5. Install the cleaned lock into a cached environment, with a receipt
    (``uvlx.environments``, C8, P1).
@@ -12,8 +11,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from uvlx.clean import CleanResult, clean_root, configured_indexes, render
-from uvlx.credentials import credentials_for
+from uvlx.clean import CleanResult, clean_root, render
 from uvlx.environments import LockedEnvironment, ensure_environment
 from uvlx.fetch import FetchedLock, FetchPolicy, fetch_lock
 from uvlx.pylock_url import find_lock_url
@@ -45,9 +43,7 @@ def prepare(
         allow_unknown_fragment=allow_unknown_fragment,
         allow_http=policy.allow_http,
     )
-    configured = configured_indexes(uv, f"{root.name}=={root.version}")
-    credentials = credentials_for(lock_url.url, configured)
-    fetched = fetch_lock(lock_url, credentials, policy)
+    fetched = fetch_lock(lock_url, policy)
     result = clean_root(
         root, lock_url.file_name, fetched.content, uv, tuple(sorted(request.extras))
     )

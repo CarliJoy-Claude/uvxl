@@ -1,8 +1,11 @@
-"""Fetching the lock (F4 to F6). Which credentials to send: ``uvlx.credentials``.
+"""Fetching the lock (F4 to F6).
 
-httpx2 follows redirects up to the limit and removes the Authorization
-header as soon as a redirect leaves the origin (F3). A request hook refuses
-every non-https hop (F4). The body is streamed, so the size limit holds.
+The Python PoC sends no credentials at all, so F3 holds trivially and locks
+must be readable without login. Credentials for privately hosted locks are
+left to the Rust version, which can use uv's own credential handling.
+
+httpx2 follows redirects up to the limit; a request hook refuses every
+non-https hop (F4). The body is streamed, so the size limit holds.
 """
 
 import hashlib
@@ -13,7 +16,6 @@ from typing import Final
 
 import httpx2
 
-from uvlx.credentials import Credentials
 from uvlx.errors import FetchError, LockRejected
 from uvlx.pylock_url import LockUrl
 
@@ -51,13 +53,8 @@ def https_only(policy: FetchPolicy) -> Callable[[httpx2.Request], None]:
     return check
 
 
-def download(
-    url: str, credentials: Credentials | None, policy: FetchPolicy
-) -> tuple[str, bytes]:
-    """GET ``url``; return the final URL and the body."""
-    auth: tuple[str, str] | None = None
-    if credentials is not None:
-        auth = (credentials.username, credentials.password)
+def download(url: str, policy: FetchPolicy) -> tuple[str, bytes]:
+    """GET ``url`` without credentials; return the final URL and the body."""
     client = httpx2.Client(
         follow_redirects=True,
         max_redirects=policy.max_redirects,
@@ -66,7 +63,7 @@ def download(
         event_hooks={"request": [https_only(policy)]},
     )
     try:
-        with client, client.stream("GET", url, auth=auth) as response:
+        with client, client.stream("GET", url) as response:
             response.raise_for_status()
             content = bytearray()
             for chunk in response.iter_bytes():
@@ -95,11 +92,9 @@ def verify_pinned(lock_url: LockUrl, content: bytes) -> None:
             )
 
 
-def fetch_lock(
-    lock_url: LockUrl, credentials: Credentials | None, policy: FetchPolicy
-) -> FetchedLock:
+def fetch_lock(lock_url: LockUrl, policy: FetchPolicy) -> FetchedLock:
     """Fetch and (in pinned mode) verify the lock. Any failure is fatal (F6)."""
-    final_url, content = download(lock_url.url, credentials, policy)
+    final_url, content = download(lock_url.url, policy)
     verify_pinned(lock_url, content)
     return FetchedLock(
         lock_url=lock_url,

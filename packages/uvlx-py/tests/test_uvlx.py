@@ -1,27 +1,23 @@
 """``uvlx``: real uv, a fake index hosting the lock, the whole run flow."""
 
-import base64
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import tempfile
 import tomllib
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner, Result
 
-from helpers import UV, FakeIndex, FakeKeyring, ServedFile, World, build_wheel
+from helpers import UV, FakeIndex, ServedFile, World, build_wheel
 from uvlx.cli import uvlx_main
 from uvlx.fetch import FetchPolicy
 
 pytestmark = pytest.mark.skipif(UV is None, reason="uv is not installed")
 
 LOCK_PATH = "/+f/0a1/pylock.toml"
-AUTHORIZATION = "Basic " + base64.b64encode(b"user:secret").decode()
 
 
 @pytest.fixture
@@ -251,84 +247,13 @@ def test_lock_rejected_by_verify_and_clean(world: World, out: Path) -> None:
     assert environments(world) == ()
 
 
-# --------------------------------------------------------------------------
-# F3: credentials from keyring, only for a lock under a configured index
-# --------------------------------------------------------------------------
-
-
-@pytest.fixture
-def foreign(world: World) -> Iterator[FakeIndex]:
-    """A second origin (another port) that needs no credentials."""
-    server = FakeIndex()
-    server.start()
-    yield server
-    server.stop()
-
-
-@pytest.fixture
-def keyring(world: World, monkeypatch: pytest.MonkeyPatch) -> FakeKeyring:
-    """A fake keyring on PATH; uv uses it too (subprocess provider)."""
-    fake = FakeKeyring(world.directory / "keyring")
-    monkeypatch.setenv("PATH", f"{fake.directory}:{os.environ['PATH']}")
-    monkeypatch.setenv("UV_KEYRING_PROVIDER", "subprocess")
-    return fake
-
-
-def protected_index(world: World, keyring: FakeKeyring) -> str:
-    """The index needs credentials; keyring has them for its host."""
-    world.index.expected_authorization = AUTHORIZATION
-    keyring.add(world.index.host, "user", "secret")
-    return f"http://user@{world.index.host}/simple"
-
-
-def test_lock_on_the_index_gets_keyring_credentials(
-    world: World, keyring: FakeKeyring, out: Path
-) -> None:
-    index_url = protected_index(world, keyring)
-    publish_app(world, f"Pylock, {host_lock(world)}")
-    result = uvlx(world, "app", index_url=index_url)
-    assert result.exit_code == 3, result.stderr
-    assert lock_requests(world.index) == [AUTHORIZATION]
-    # Like uv: the index URL first, then the host.
-    assert ["get", world.index.url, "user"] in keyring.calls()
-    assert ["get", world.index.host, "user"] in keyring.calls()
-
-
-def test_index_without_user_name_asks_keyring_for_both(
-    world: World, keyring: FakeKeyring, out: Path
-) -> None:
-    keyring.add(world.index.url, "user", "secret")
-    publish_app(world, f"Pylock, {host_lock(world)}")
-    result = uvlx(world, "app")
-    assert result.exit_code == 3, result.stderr
-    assert lock_requests(world.index) == [AUTHORIZATION]
-    assert keyring.calls() == [["get", world.index.url, "--mode", "creds"]]
-
-
-def test_foreign_lock_host_gets_no_credentials(
-    world: World, foreign: FakeIndex, keyring: FakeKeyring, out: Path
-) -> None:
-    index_url = protected_index(world, keyring)
-    keyring.add(foreign.host, "user", "secret")
-    publish_app(world, f"Pylock, {host_lock(world, foreign)}")
-    result = uvlx(world, "app", index_url=index_url)
-    assert result.exit_code == 3, result.stderr
-    assert lock_requests(foreign) == [None]
-    assert not [call for call in keyring.calls() if foreign.host in call[1]]
-
-
-def test_redirect_to_another_origin_drops_credentials(
-    world: World, foreign: FakeIndex, keyring: FakeKeyring, out: Path
-) -> None:
-    index_url = protected_index(world, keyring)
-    target = host_lock(world, foreign)
+def test_redirects_are_followed(world: World, out: Path) -> None:
+    target = host_lock(world)
     world.index.redirects["/moved/pylock.toml"] = target
     publish_app(world, f"Pylock, {world.index.base()}/moved/pylock.toml")
-    result = uvlx(world, "app", index_url=index_url)
+    result = uvlx(world, "app")
     assert result.exit_code == 3, result.stderr
-    moved = [auth for path, auth in world.index.requests if path.startswith("/moved")]
-    assert moved == [AUTHORIZATION]
-    assert lock_requests(foreign) == [None]
+    assert len(lock_requests(world.index)) == 1
 
 
 def test_root_with_several_wheels_binds_the_one_uv_installed(

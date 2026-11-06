@@ -3,6 +3,10 @@ name = "uvxl-rs"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
+description = "Rust backend of uvxl: run a Python application with the lock linked from its Pylock Project-URL"
+license = "MIT"
+authors = ["Carli* Freudenberg <kound@posteo.de>"]
+repository = "https://github.com/CarliJoy/uvxl"
 publish = false
 
 [[bin]]

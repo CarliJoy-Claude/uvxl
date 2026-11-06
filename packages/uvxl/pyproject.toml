@@ -1,9 +1,34 @@
 [project]
 name = "uvxl"
-version = "0.1.0"
-description = "Run a Python application with the lock linked from its Pylock Project-URL (picks the Rust or Python backend)"
+dynamic = ["version"]
+description = "Run a Python application like uvx, installed with the lock its Pylock Project-URL links (picks the Rust or Python backend)"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Carli* Freudenberg", email = "kound@posteo.de" },
+]
+keywords = ["uv", "uvx", "pylock", "lock file", "PEP 751", "reproducible"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: System :: Software Distribution",
+    "Typing :: Typed",
+]
 dependencies = [
     "uvxl-py",
 ]
@@ -12,6 +37,13 @@ dependencies = [
 rust = [
     "uvxl-rs",
 ]
+
+[project.urls]
+Homepage = "https://github.com/CarliJoy/uvxl"
+Documentation = "https://github.com/CarliJoy/uvxl/blob/main/README.md"
+Changelog = "https://github.com/CarliJoy/uvxl/blob/main/CHANGELOG.md"
+Issues = "https://github.com/CarliJoy/uvxl/issues"
+"Source Code" = "https://github.com/CarliJoy/uvxl"
 
 [project.scripts]
 uvxl = "uvxl:main"
@@ -22,5 +54,13 @@ uvxl-py = { workspace = true }
 uvxl-rs = { workspace = true }
 
 [build-system]
-requires = ["uv_build>=0.13,<0.14"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.28.0,<2", "hatch-vcs>=0.5.0,<0.6"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+# The packages live two levels below the git root.
+raw-options = { root = "../.." }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/uvxl"]

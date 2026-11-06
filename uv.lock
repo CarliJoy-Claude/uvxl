@@ -451,7 +451,6 @@ wheels = [
 
 [[package]]
 name = "uvxl"
-version = "0.1.0"
 source = { editable = "packages/uvxl" }
 dependencies = [
     { name = "uvxl-py" },
@@ -471,7 +470,6 @@ provides-extras = ["rust"]
 
 [[package]]
 name = "uvxl-py"
-version = "0.1.0"
 source = { editable = "packages/uvxl-py" }
 dependencies = [
     { name = "click" },
@@ -490,5 +488,4 @@ requires-dist = [
 
 [[package]]
 name = "uvxl-rs"
-version = "0.1.0"
 source = { editable = "packages/uvxl-rs" }

@@ -1,9 +1,38 @@
 [project]
 name = "uvxl-rs"
-version = "0.1.0"
-description = "PoC: install and run a Python application with the lock linked from its Pylock Project-URL (Rust implementation on the uv crates; placeholder)"
+# The version comes from Cargo.toml; the release workflow sets it from the tag.
+dynamic = ["version"]
+description = "Rust backend of uvxl: runs a Python application with the lock linked from its Pylock Project-URL, built on uv's crates"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Carli* Freudenberg", email = "kound@posteo.de" },
+]
+keywords = ["uv", "uvx", "pylock", "lock file", "PEP 751", "reproducible"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: System :: Software Distribution",
+]
+
+[project.urls]
+Homepage = "https://github.com/CarliJoy/uvxl"
+Documentation = "https://github.com/CarliJoy/uvxl/blob/main/README.md"
+Changelog = "https://github.com/CarliJoy/uvxl/blob/main/CHANGELOG.md"
+Issues = "https://github.com/CarliJoy/uvxl/issues"
+"Source Code" = "https://github.com/CarliJoy/uvxl"
 
 [build-system]
 requires = ["maturin>=1.16,<2"]

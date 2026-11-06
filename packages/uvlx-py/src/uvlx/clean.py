@@ -127,10 +127,7 @@ def check_locked(
 
 
 def configured_indexes(uv: Uv, requirement: str) -> tuple[str, ...]:
-    """The indexes uv is configured with (CLI, env vars and config files).
-
-    The URLs keep their user info: it is one source of credentials (F3).
-    """
+    """The indexes uv is configured with (CLI, env vars and config files)."""
     output = uv.compile(
         requirement,
         "",
@@ -143,7 +140,7 @@ def configured_indexes(uv: Uv, requirement: str) -> tuple[str, ...]:
         ),
     )
     found = (INDEX_LINE_RE.match(line) for line in output.stdout.splitlines())
-    return tuple(match.group(1) for match in found if match)
+    return tuple(strip_user_info(match.group(1)) for match in found if match)
 
 
 def root_requirement(root: RootWheel, extras: frozenset[str]) -> str:
@@ -192,10 +189,7 @@ def clean_root(
     )
     candidates = parse_candidates(output.stdout)
     yanked = yanked_releases(output.stderr)
-    configured = tuple(
-        strip_user_info(index)
-        for index in configured_indexes(uv, root_requirement(root, frozenset()))
-    )
+    configured = configured_indexes(uv, root_requirement(root, frozenset()))
     configured_keys = frozenset(index_key(index) for index in configured)
 
     packages: list[CleanPackage] = []

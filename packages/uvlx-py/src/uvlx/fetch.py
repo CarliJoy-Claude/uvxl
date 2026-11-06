@@ -20,15 +20,15 @@ from uvlx.errors import LockRejected, VerifyError
 from uvlx.pylock_url import LockUrl
 
 USER_AGENT: Final = "uvlx/0.1"
+TIMEOUT: Final = 30.0
+MAX_REDIRECTS: Final = 5
 
 
 @dataclass(frozen=True, slots=True)
 class FetchPolicy:
-    """Limits of rule F4. ``allow_http`` exists for local tests only."""
+    """What tests may change: the size limit (F4) and plain http."""
 
     max_size: int = 1024 * 1024
-    timeout: float = 30.0
-    max_redirects: int = 5
     allow_http: bool = False
 
 
@@ -56,8 +56,8 @@ def download(url: str, policy: FetchPolicy) -> bytes:
     """GET ``url`` without credentials; return the body."""
     client = httpx2.Client(
         follow_redirects=True,
-        max_redirects=policy.max_redirects,
-        timeout=policy.timeout,
+        max_redirects=MAX_REDIRECTS,
+        timeout=TIMEOUT,
         headers={"User-Agent": USER_AGENT},
         event_hooks={"request": [https_only(policy)]},
     )

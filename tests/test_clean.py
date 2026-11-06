@@ -1,11 +1,13 @@
 """Verify and clean: real uv against a local fake PEP 691 index."""
 
 import base64
+import tomllib
 
 import pytest
 
 import uvxl_py
 from helpers import UV, ServedFile, World, build_wheel, sha256_hex
+from uvxl_py.clean import render
 
 pytestmark = pytest.mark.skipif(UV is None, reason="uv is not installed")
 
@@ -194,3 +196,113 @@ def test_lock_that_excludes_this_environment_is_rejected(world: World) -> None:
     )
     with pytest.raises(uvxl_py.LockRejectedError, match=r"\[C1\]"):
         world.clean_file(path)
+
+
+# --------------------------------------------------------------------------
+# The lock's own checks (C1 to C4) and sloppy indexes
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("requires_python", "message"),
+    [
+        ("not a specifier", r"\[C1\] invalid requires-python"),
+        ("<3", r"\[C1\] requires-python excludes Python"),
+    ],
+)
+def test_requires_python_of_the_lock(
+    world: World, requires_python: str, message: str
+) -> None:
+    path = world.write_lock(
+        world.good_entries(), **{"requires-python": requires_python}
+    )
+    with pytest.raises(uvxl_py.LockRejectedError, match=message):
+        world.clean_file(path)
+
+
+def test_lock_covering_this_python_is_accepted(world: World) -> None:
+    path = world.write_lock(world.good_entries(), **{"requires-python": ">=3.8"})
+    assert "dep-a" in names(world.clean_file(path))
+
+
+def test_invalid_marker_is_rejected(world: World) -> None:
+    entry = world.entry("dep-a", marker="python_version >>> '3'")
+    with pytest.raises(uvxl_py.LockRejectedError, match="invalid marker"):
+        world.clean(world.replaced("dep-a", entry))
+
+
+def test_entry_without_files_is_rejected(world: World) -> None:
+    entry = {k: v for k, v in world.entry("dep-b").items() if k != "wheels"}
+    with pytest.raises(
+        uvxl_py.LockRejectedError, match=r"\[C3\].*no wheel and no sdist"
+    ):
+        world.clean(world.replaced("dep-b", entry))
+
+
+def test_sdist_with_hashes_is_accepted_and_dropped(world: World) -> None:
+    sdist = {"name": "dep_b-2.0.tar.gz", "hashes": {"sha256": "1" * 64}}
+    result = world.clean(world.replaced("dep-b", world.entry("dep-b", sdist=sdist)))
+    (package,) = (p for p in result.packages if p.name == "dep-b")
+    assert all(wheel.filename.endswith(".whl") for wheel in package.wheels)
+
+
+def test_sdist_without_hashes_is_rejected(world: World) -> None:
+    entry = world.entry("dep-b", sdist={"name": "dep_b-2.0.tar.gz"})
+    with pytest.raises(uvxl_py.LockRejectedError, match=r"\[C3\]"):
+        world.clean(world.replaced("dep-b", entry))
+
+
+def test_invalid_version_is_rejected(world: World) -> None:
+    entry = world.entry("dep-b", version="not a version")
+    with pytest.raises(uvxl_py.LockRejectedError, match=r"\[C3\].*invalid version"):
+        world.clean(world.replaced("dep-b", entry))
+
+
+def test_invalid_toml_is_rejected(world: World) -> None:
+    path = world.directory / "pylock.toml"
+    path.write_text("lock-version = ", encoding="utf-8")
+    with pytest.raises(uvxl_py.LockRejectedError, match="invalid TOML"):
+        world.clean_file(path)
+
+
+@pytest.mark.parametrize(
+    ("packages", "message"),
+    [("packages = 'x'", "expected an array"), ("packages = ['x']", "expected a table")],
+)
+def test_wrong_toml_types_are_rejected(
+    world: World, packages: str, message: str
+) -> None:
+    path = world.directory / "pylock.toml"
+    path.write_text(f'lock-version = "1.0"\n{packages}\n', encoding="utf-8")
+    with pytest.raises(uvxl_py.LockRejectedError, match=message):
+        world.clean_file(path)
+
+
+def test_lock_hash_in_another_algorithm_does_not_match(world: World) -> None:
+    table = {"name": "x.whl", "hashes": {"sha512": "0" * 128}}
+    with pytest.raises(uvxl_py.LockRejectedError, match=r"\[C5.4\]"):
+        world.clean(world.replaced("dep-b", world.entry("dep-b", wheels=[table])))
+
+
+def test_root_served_without_hashes_gets_hashes(world: World) -> None:
+    """uv hashes the file itself when the index states no hash (C7, C8)."""
+    world.index.projects["app"] = [ServedFile(world.wheels["app"], hashes=False)]
+    result = world.clean(world.good_entries())
+    (root,) = (p for p in result.packages if p.name == "app")
+    expected = sha256_hex(world.wheels["app"].read_bytes())
+    assert [wheel.hashes for wheel in root.wheels] == [{"sha256": expected}]
+
+
+def test_index_without_sizes_gives_a_lock_without_sizes(world: World) -> None:
+    world.index.projects["dep-b"] = [ServedFile(world.wheels["dep-b"], size=False)]
+    result = world.clean(world.good_entries())
+    rendered = tomllib.loads(render(result))
+    (dep_b,) = (p for p in rendered["packages"] if p["name"] == "dep-b")
+    assert "size" not in dep_b["wheels"][0]
+
+
+def test_broken_index_page_is_an_error_not_a_rejection(world: World) -> None:
+    world.index.failing.add("dep-b")
+    with pytest.raises(uvxl_py.VerifyError) as caught:
+        world.clean(world.good_entries())
+    assert not isinstance(caught.value, uvxl_py.LockRejectedError)

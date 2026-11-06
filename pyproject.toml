@@ -6,7 +6,9 @@ members = ["packages/*"]
 
 [dependency-groups]
 dev = [
+    "coverage>=7.10",
     "mypy>=2.4",
+    "prek>=0.5",
     "pytest>=9.2",
     "ruff>=0.17",
 ]
@@ -91,6 +93,34 @@ strict = true
 python_version = "3.12"
 mypy_path = ["packages/uvxl/src", "packages/uvxl-py/src", "tests"]
 explicit_package_bases = true
+
+[tool.coverage.run]
+branch = true
+source_pkgs = ["uvxl", "uvxl_py"]
+parallel = true
+# The shared backend suite runs `python -m uvxl` in subprocesses.
+patch = ["subprocess"]
+
+# CI tests the installed (non-editable) packages: report them as source files
+[tool.coverage.paths]
+uvxl = ["packages/uvxl/src/uvxl", "*/site-packages/uvxl"]
+uvxl_py = ["packages/uvxl-py/src/uvxl_py", "*/site-packages/uvxl_py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 100
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+    "assert_never\\(.*\\)",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

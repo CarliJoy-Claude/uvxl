@@ -143,3 +143,13 @@ def test_without_any_backend_uvxl_fails(tmp_path: Path) -> None:
     forced = run_uvxl("--help", backend="python", python=python)
     assert forced.returncode == 1
     assert "uvxl-py is not installed" in forced.stderr
+
+
+def test_main_takes_explicit_arguments(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("UVXL_BACKEND", "python")
+    with pytest.raises(SystemExit) as caught:
+        uvxl.main(["--help"])
+    assert caught.value.code == 0
+    assert PYTHON_HELP in capsys.readouterr().out

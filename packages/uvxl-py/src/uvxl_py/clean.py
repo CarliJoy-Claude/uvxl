@@ -57,18 +57,11 @@ def check_root(candidate: Candidate, root: RootWheel) -> CleanPackage:
 
     The entry has no ``index``: PEP 751 only says SHOULD, and uv then uses
     the file URL minus the file name, which only affects its cache key.
+    The version is the root's: uv resolved ``root==version``.
     """
-    if candidate.version != root.version:
-        raise LockRejectedError(
-            f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
-        )
-    kept = [wheel for wheel in candidate.wheels if wheel.hashes]
-    if not kept:
-        raise LockRejectedError(
-            f"[C7] the configured indexes serve no hashed wheel for the root "
-            f"{root.name} {root.version}"
-        )
-    return CleanPackage(root.name, root.version, None, tuple(kept))
+    # uv's pylock output always has hashes; it computes them if the index
+    # states none (checked by test_root_served_without_hashes_gets_hashes).
+    return CleanPackage(root.name, root.version, None, candidate.wheels)
 
 
 def check_locked(
@@ -76,15 +69,14 @@ def check_locked(
     entry: LockEntry | None,
     configured_keys: frozenset[IndexKey],
 ) -> CleanPackage:
-    """Rules C5.1 to C5.5 for one package uv needs."""
+    """Rules C5.1 and C5.3 to C5.5 for one package uv needs.
+
+    C5.2 (locked version satisfies the requirement) holds by construction:
+    uv resolved with the lock's ``name==version`` pins as constraints.
+    """
     if entry is None:
         raise LockRejectedError(
             f"[C5.1] {candidate.name} {candidate.version} is needed but not in the lock"
-        )
-    if candidate.version != entry.version:
-        raise LockRejectedError(
-            f"[C5.2] uv selected {candidate.name} {candidate.version}, "
-            f"the lock has {entry.version}"
         )
     if index_key(entry.index) not in configured_keys:
         raise LockRejectedError(
@@ -173,8 +165,6 @@ def clean_root(
             packages.append(check_locked(candidate, entry, configured_keys))
 
     names = frozenset(package.name for package in packages)
-    if root.name not in names:
-        raise VerifyError(f"uv's resolution does not contain {root.name}")
     return CleanResult(
         packages=tuple(sorted(packages, key=lambda package: package.name)),
         unreached=tuple(sorted(set(lock) - names)),

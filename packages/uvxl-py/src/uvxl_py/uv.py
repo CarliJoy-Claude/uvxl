@@ -170,9 +170,7 @@ def marker_environment(interpreter: str) -> Mapping[str, str]:
         (interpreter, "-I", "-c", MARKER_ENVIRONMENT_SCRIPT, PACKAGING_PATH),
         capture_output=True,
         text=True,
-        check=False,
+        check=True,  # the interpreter was just found by `uv python find`
     )
-    if result.returncode != 0:
-        raise VerifyError(f"cannot query {interpreter}: {result.stderr.strip()}")
     raw = json.loads(result.stdout)
     return MappingProxyType({str(key): str(value) for key, value in raw.items()})

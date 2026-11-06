@@ -6,7 +6,7 @@ import pytest
 from uvxl_py.errors import LockRejectedError, VerifyError
 from uvxl_py.fetch import https_only
 from uvxl_py.pylock_url import find_lock_url, normalize_label
-from uvxl_py.urls import is_insecure_host
+from uvxl_py.urls import is_insecure_host, origin
 
 HEX = "ab" * 32
 
@@ -128,3 +128,8 @@ def test_http_lock_url_needs_an_insecure_host() -> None:
     assert find_lock_url(entry, ("h.example",)).url == "http://h.example/pylock.toml"
     with pytest.raises(LockRejectedError, match=r"\[M3\]"):
         find_lock_url(entry, ("other.example",))
+
+
+def test_origin_defaults_the_port_by_scheme() -> None:
+    assert origin("http://h.example/x") == ("http", "h.example", 80)
+    assert origin("https://h.example/x") == ("https", "h.example", 443)

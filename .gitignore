@@ -10,3 +10,8 @@ build/
 .ruff_cache/
 target/
 .env
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+junit-*.xml

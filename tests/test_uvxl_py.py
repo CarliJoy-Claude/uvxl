@@ -91,3 +91,48 @@ def test_cleaned_lock_keeps_all_served_root_wheels(world: World, out: Path) -> N
     assert sorted(wheel["name"] for wheel in root["wheels"]) == sorted(
         (first.path.name, second.name)
     )
+
+
+@pytest.mark.parametrize(
+    ("requirement", "message"),
+    [
+        ("app[", "invalid requirement"),
+        ("app @ https://x.invalid/app.whl", "only a name, extras and a version"),
+    ],
+)
+def test_invalid_from_is_an_error(
+    world: World, out: Path, requirement: str, message: str
+) -> None:
+    result = uvxl_py(world, "--from", requirement, "app")
+    assert result.exit_code == 1
+    assert message in result.stderr
+
+
+def test_without_python_option_uv_picks_the_interpreter(
+    world: World, out: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The test's own virtual environment is what uv finds first.
+    monkeypatch.setenv("VIRTUAL_ENV", sys.prefix)
+    publish(world)
+    result = CliRunner().invoke(
+        uvxl_main,
+        [
+            "--index-url",
+            world.index.url,
+            "--cache-dir",
+            str(world.directory / "uv-cache"),
+            "--allow-insecure-host",
+            "127.0.0.1",
+            "app",
+        ],
+    )
+    assert result.exit_code == 3, result.stderr
+
+
+def test_uv_missing_from_path_is_an_error(
+    world: World, out: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(world.directory / "empty"))
+    result = uvxl_py(world, "app")
+    assert result.exit_code == 1
+    assert "uv not found on PATH" in result.stderr

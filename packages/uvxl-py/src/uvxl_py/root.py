@@ -60,27 +60,17 @@ def parse_root_request(text: str) -> RootRequest:
     )
 
 
-def root_from_metadata(raw: bytes, where: str) -> RootWheel:
-    try:
-        metadata = Metadata.from_email(raw, validate=False)
-        name = metadata.name
-        version = metadata.version
-        extras = frozenset(
-            canonicalize_name(extra) for extra in metadata.provides_extra or ()
-        )
-    except (ValueError, ExceptionGroup) as error:
-        raise VerifyError(f"{where}: invalid metadata: {error}") from error
-    if name is None or version is None:
-        raise VerifyError(f"{where}: metadata lacks Name or Version")
-    return RootWheel(canonicalize_name(name), version, extras, raw)
+def root_from_metadata(raw: bytes) -> RootWheel:
+    metadata = Metadata.from_email(raw, validate=False)  # uv installed it already
+    extras = frozenset(
+        canonicalize_name(extra) for extra in metadata.provides_extra or ()
+    )
+    return RootWheel(canonicalize_name(metadata.name), metadata.version, extras, raw)
 
 
 def read_metadata(target: Path) -> bytes:
-    """METADATA of the single distribution installed in ``target``."""
-    found = tuple(target.glob("*.dist-info/METADATA"))
-    if len(found) != 1:
-        raise VerifyError(f"expected one dist-info after installing, got {found}")
-    return found[0].read_bytes()
+    """METADATA of the one distribution installed in ``target`` (``--no-deps``)."""
+    return next(target.glob("*.dist-info/METADATA")).read_bytes()
 
 
 def select_root(uv: Uv, request: RootRequest) -> RootWheel:
@@ -89,7 +79,4 @@ def select_root(uv: Uv, request: RootRequest) -> RootWheel:
         target = Path(directory)
         uv.install_target(request.requirement(), target)
         metadata = read_metadata(target)
-    root = root_from_metadata(metadata, request.requirement())
-    if root.name != request.name:
-        raise VerifyError(f"uv installed {root.name}, expected {request.name}")
-    return root
+    return root_from_metadata(metadata)

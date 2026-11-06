@@ -106,6 +106,9 @@ class ServedFile:
     # Serve these bytes instead, while still advertising the hash of `path`.
     # Must be a valid wheel: a broken zip fails before the hash check.
     replacement: Path | None = None
+    # Like a sloppy index: no hashes or no size on the project page.
+    hashes: bool = True
+    size: bool = True
 
 
 @dataclass
@@ -118,6 +121,8 @@ class FakeIndex:
     # Any other path: fixed content (a hosted lock) or a redirect target.
     extra_files: dict[str, bytes] = field(default_factory=dict)
     redirects: dict[str, str] = field(default_factory=dict)
+    # Projects whose page answers 500, like a broken index.
+    failing: set[str] = field(default_factory=set)
 
     def start(self) -> None:
         index = self
@@ -154,6 +159,9 @@ class FakeIndex:
                     return
                 if self.path.startswith("/simple/"):
                     name = self.path.removeprefix("/simple/").strip("/")
+                    if name in index.failing:
+                        self.send_error(500)
+                        return
                     if name not in index.projects:
                         self.send_error(404)
                         return
@@ -202,10 +210,13 @@ class FakeIndex:
             table: dict[str, object] = {
                 "filename": served.path.name,
                 "url": f"/files/{served.path.name}",
-                "hashes": {"sha256": sha256_hex(data)},
-                "size": len(data),
+                "hashes": {},
                 "core-metadata": {"sha256": sha256_hex(wheel_metadata(served.path))},
             }
+            if served.hashes:
+                table["hashes"] = {"sha256": sha256_hex(data)}
+            if served.size:
+                table["size"] = len(data)
             if served.yanked:
                 table["yanked"] = "test"
             files.append(table)

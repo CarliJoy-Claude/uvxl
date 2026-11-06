@@ -65,8 +65,6 @@ def receipt_document(
         "root": {
             "name": root.name,
             "version": str(root.version),
-            "filename": root.filename,
-            "hashes": dict(root.hashes),
         },
         "cleaned-lock": LOCK_NAME,
         "cleaned-lock-sha256": hashlib.sha256(cleaned_lock.encode()).hexdigest(),

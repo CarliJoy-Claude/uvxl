@@ -140,8 +140,8 @@ class Uv:
             message = without_noise(result.stderr)
             raise UvError(f"uv pip install failed:\n{message}")
 
-    def install_target(self, requirements: str, target: Path) -> None:
-        """Install hash-pinned requirements (stdin) into a plain directory."""
+    def install_target(self, requirement: str, target: Path) -> None:
+        """Install one wheel, without dependencies, into a plain directory."""
         command = (
             self.executable,
             "pip",
@@ -151,16 +151,12 @@ class Uv:
             "--target",
             str(target),
             "--no-deps",
-            "--require-hashes",
             "--only-binary",
             ":all:",
-            "-r",
-            "-",
+            requirement,
             *self.extra_args,
         )
-        result = subprocess.run(
-            command, input=requirements, capture_output=True, text=True, check=False
-        )
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             message = without_noise(result.stderr)
             raise UvError(f"uv pip install --target failed:\n{message}")

@@ -4,10 +4,8 @@ import hashlib
 import io
 import re
 import zipfile
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 
 from packaging.metadata import Metadata
 from packaging.utils import canonicalize_name, parse_wheel_filename
@@ -17,23 +15,26 @@ from uvlx.errors import MetadataError, VerifyError
 
 
 @dataclass(frozen=True, slots=True)
+class RootFile:
+    filename: str
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class RootWheel:
     name: str
     version: Version
-    filename: str
-    hashes: Mapping[str, str]
     provides_extra: frozenset[str]
     metadata: bytes
+    # The exact file for a local wheel (pylock-verify-clean). None when uv
+    # chose the wheel (uvlx): then any wheel the index serves for the version.
+    file: RootFile | None = None
 
 
 def root_from_metadata(
-    raw: bytes, filename: str, hashes: Mapping[str, str]
+    raw: bytes, where: str, file: RootFile | None = None
 ) -> RootWheel:
-    """The root wheel from its METADATA bytes, file name and file hashes."""
-    try:
-        file_name, file_version, _build, _tags = parse_wheel_filename(filename)
-    except ValueError as error:
-        raise VerifyError(f"{filename}: not a valid wheel file name") from error
+    """The root from its METADATA bytes."""
     try:
         metadata = Metadata.from_email(raw, validate=False)
         name = metadata.name
@@ -42,23 +43,18 @@ def root_from_metadata(
             canonicalize_name(extra) for extra in metadata.provides_extra or ()
         )
     except (ValueError, ExceptionGroup) as error:
-        raise MetadataError(f"{filename}: invalid metadata: {error}") from error
+        raise MetadataError(f"{where}: invalid metadata: {error}") from error
     if name is None or version is None:
-        raise MetadataError(f"{filename}: metadata lacks Name or Version")
-    if canonicalize_name(name) != file_name or version != file_version:
-        raise MetadataError(f"{filename}: file name and metadata disagree")
-    return RootWheel(
-        name=file_name,
-        version=version,
-        filename=filename,
-        hashes=MappingProxyType(dict(hashes)),
-        provides_extra=extras,
-        metadata=raw,
-    )
+        raise MetadataError(f"{where}: metadata lacks Name or Version")
+    return RootWheel(canonicalize_name(name), version, extras, raw, file)
 
 
 def load_root_wheel(path: Path) -> RootWheel:
-    """The root wheel from a local file."""
+    """The root from a local wheel file."""
+    try:
+        file_name, file_version, _build, _tags = parse_wheel_filename(path.name)
+    except ValueError as error:
+        raise VerifyError(f"{path.name}: not a valid wheel file name") from error
     data = path.read_bytes()
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -72,6 +68,8 @@ def load_root_wheel(path: Path) -> RootWheel:
             raw = archive.read(candidates[0])
     except zipfile.BadZipFile as error:
         raise MetadataError(f"{path.name}: not a valid wheel archive") from error
-    return root_from_metadata(
-        raw, path.name, {"sha256": hashlib.sha256(data).hexdigest()}
-    )
+    file = RootFile(path.name, hashlib.sha256(data).hexdigest())
+    root = root_from_metadata(raw, path.name, file)
+    if root.name != file_name or root.version != file_version:
+        raise MetadataError(f"{path.name}: file name and metadata disagree")
+    return root

@@ -64,21 +64,31 @@ class CleanResult:
 def check_root(
     candidate: Candidate, root: RootWheel, configured: Sequence[str]
 ) -> CleanPackage:
-    """Rule C7: the root is exactly the given wheel."""
+    """Rule C7: the root's wheels, with URL and hash from the index.
+
+    A local root wheel must be served exactly. Otherwise (uv chose the wheel)
+    every wheel the index serves for the root version is kept.
+    """
     if candidate.version != root.version:
         raise LockRejected(
             f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
         )
+    kept: list[CleanWheel] = []
     for wheel in candidate.wheels:
-        verified = common_verified(root.hashes, wheel.hashes)
-        if verified is not None and wheel.filename == root.filename:
-            clean_wheel = CleanWheel(wheel.filename, wheel.url, wheel.size, verified)
-            index = configured_index_for(wheel.url, configured)
-            return CleanPackage(root.name, root.version, index, (clean_wheel,))
-    raise LockRejected(
-        f"[C7] the configured indexes do not serve {root.filename} "
-        f"with hashes {dict(root.hashes)}"
-    )
+        verified: Mapping[str, str] | None = None
+        if root.file is None and wheel.hashes:
+            verified = wheel.hashes  # uv chose the wheel: the index's hashes
+        elif root.file is not None and wheel.filename == root.file.filename:
+            verified = common_verified({"sha256": root.file.sha256}, wheel.hashes)
+        if verified is not None:
+            kept.append(CleanWheel(wheel.filename, wheel.url, wheel.size, verified))
+    if not kept:
+        raise LockRejected(
+            f"[C7] the configured indexes serve no hashed wheel for the root "
+            f"{root.name} {root.version} (local file: {root.file})"
+        )
+    index = configured_index_for(kept[0].url, configured)
+    return CleanPackage(root.name, root.version, index, tuple(kept))
 
 
 def check_locked(
@@ -166,7 +176,7 @@ def clean_root(
     unknown = requested - root.provides_extra
     if unknown:
         raise VerifyError(
-            f"{root.filename} has no extra(s): {', '.join(sorted(unknown))}"
+            f"{root.name} {root.version} has no extra(s): {', '.join(sorted(unknown))}"
         )
     environment = lock_environment(marker_environment(uv.python), requested)
     lock = parse_lock(lock_name, lock_content, root.name, environment)

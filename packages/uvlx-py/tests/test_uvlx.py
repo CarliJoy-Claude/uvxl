@@ -137,7 +137,7 @@ def test_receipt_records_the_lock(world: World, out: Path) -> None:
     assert receipt["lock-sha256"] == lock_sha256(world)
     assert receipt["lock-mode"] == "mutable"
     assert receipt["fetched-at"].endswith("+00:00")
-    assert receipt["root"]["filename"] == "app-1.0-py3-none-any.whl"
+    assert receipt["root"] == {"name": "app", "version": "1.0"}
     cleaned = tomllib.loads((environment / "pylock.uvlx.toml").read_text())
     assert [p["name"] for p in cleaned["packages"]] == ["app", "dep-a", "dep-b"]
 
@@ -256,9 +256,10 @@ def test_redirects_are_followed(world: World, out: Path) -> None:
     assert len(lock_requests(world.index)) == 1
 
 
-def test_root_with_several_wheels_binds_the_one_uv_installed(
+def test_root_with_several_wheels_keeps_all_served_wheels(
     world: World, out: Path
 ) -> None:
+    """uv chooses the root wheel; C7 binds the version, not one file."""
     publish_app(world, f"Pylock, {host_lock(world)}")
     (first,) = world.index.projects["app"]
     second = build_wheel(
@@ -274,16 +275,14 @@ def test_root_with_several_wheels_binds_the_one_uv_installed(
     result = uvlx(world, "app")
     assert result.exit_code == 3, result.stderr
     (environment,) = environments(world)
-    receipt = json.loads((environment / "uvlx-receipt.json").read_text())
     cleaned = tomllib.loads((environment / "pylock.uvlx.toml").read_text())
     (root,) = (p for p in cleaned["packages"] if p["name"] == "app")
-    (wheel,) = root["wheels"]
-    assert wheel["name"] == receipt["root"]["filename"]
-    assert wheel["name"] in {first.path.name, second.name}
-    expected = hashlib.sha256(
-        (first.path.parent / wheel["name"]).read_bytes()
-    ).hexdigest()
-    assert wheel["hashes"] == {"sha256": expected}
+    assert sorted(wheel["name"] for wheel in root["wheels"]) == sorted(
+        (first.path.name, second.name)
+    )
+    for wheel in root["wheels"]:
+        data = (first.path.parent / wheel["name"]).read_bytes()
+        assert wheel["hashes"] == {"sha256": hashlib.sha256(data).hexdigest()}
 
 
 def test_options_after_the_command_belong_to_the_command(

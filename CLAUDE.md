@@ -188,9 +188,10 @@ Exit codes: 0 ok, 1 lock rejected, 2 uv, network or usage error.
 `uvlx [--from REQ] [--python X] [--index-url URL] [--extra-index-url URL] [--uv-arg ARG] [--cache-dir DIR] [--allow-unknown-fragment] COMMAND [ARGS]...`
 Options after COMMAND belong to the command. Exit codes as above; once the command runs, its own exit code.
 
-1. **Root (F7):** `uv pip compile --no-deps --only-binary :all: --format pylock.toml` picks the version and lists every compatible wheel with hashes.
-   Then `uv pip install --no-deps --require-hashes --target <tmp> -r -` with `name==version --hash=...` for all those wheels: uv picks the wheel for the target interpreter, and the `Tag`/`Build` lines of the installed `WHEEL` file tell which one (compressed tags expanded with `packaging.tags.parse_tag`).
-   The root becomes a `RootWheel` (name, version, filename, hashes, METADATA bytes); C7 binds the cleaned lock to exactly that file.
+1. **Root (F7):** uv chooses: `uv pip install --no-deps --only-binary :all: --target <tmp> REQ` installs the wheel uv prefers for the target interpreter, and its METADATA holds the Pylock URL.
+   From then on the root is bound by name and version: C7 puts every wheel the index serves for that version (URL and hash from the index) into the cleaned lock.
+   Trade-off: if wheels of one version had different METADATA, the Pylock URL could come from another wheel than the one installed later. uv makes the same choice both times, so this is accepted for the PoC.
+   `pylock-verify-clean` still binds the root to its local file (`RootWheel.file`).
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
    No `Pylock` URL fails with `[M5]`.
 3. **Fetch:** httpx2 with `follow_redirects` (limit 5; it drops `Authorization` once a redirect leaves the origin), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. httpx2 never reads netrc by itself. Pinned hash checked before parsing.

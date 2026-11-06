@@ -30,7 +30,7 @@ from uvlx.errors import LockRejected, VerifyError
 from uvlx.lock import LockEntry, lock_environment, parse_lock
 from uvlx.root import RootWheel
 from uvlx.toml_values import common_verified
-from uvlx.urls import IndexKey, configured_index_for, index_key, strip_user_info
+from uvlx.urls import IndexKey, index_key, strip_user_info
 from uvlx.uv import Uv, marker_environment
 
 INDEX_LINE_RE: Final = re.compile(r"^--(?:index-url|extra-index-url)\s+(\S+)\s*$")
@@ -51,11 +51,13 @@ class CleanResult:
     unreached: tuple[str, ...]
 
 
-def check_root(
-    candidate: Candidate, root: RootWheel, configured: Sequence[str]
-) -> CleanPackage:
+def check_root(candidate: Candidate, root: RootWheel) -> CleanPackage:
     """Rule C7: every wheel the index serves for the root version (uv chose
-    the wheel), with URL and hash from the index."""
+    the wheel), with URL and hash from the index.
+
+    The entry has no ``index``: PEP 751 only says SHOULD, and uv then uses
+    the file URL minus the file name, which only affects its cache key.
+    """
     if candidate.version != root.version:
         raise LockRejected(
             f"[C7] uv selected {root.name} {candidate.version}, expected {root.version}"
@@ -69,8 +71,7 @@ def check_root(
             f"[C7] the configured indexes serve no hashed wheel for the root "
             f"{root.name} {root.version}"
         )
-    index = configured_index_for(kept[0].url, configured)
-    return CleanPackage(root.name, root.version, index, tuple(kept))
+    return CleanPackage(root.name, root.version, None, tuple(kept))
 
 
 def check_locked(
@@ -167,7 +168,7 @@ def clean_root(
         if (candidate.name, candidate.version) in yanked:
             raise LockRejected(f"[C5.4] {candidate.name} {candidate.version} is yanked")
         if candidate.name == root.name:
-            packages.append(check_root(candidate, root, configured))
+            packages.append(check_root(candidate, root))
         else:
             entry = lock.get(candidate.name)
             packages.append(check_locked(candidate, entry, configured_keys))

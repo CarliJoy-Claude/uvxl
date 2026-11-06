@@ -29,7 +29,10 @@ def test_happy_path_with_unmodified_uv_style_lock(world: World) -> None:
     assert names(result) == ("app", "dep-a", "dep-b")
     assert result.unreached == ("evil",)
     for clean in result.packages:
-        assert clean.index == world.index.url
+        if clean.name == "app":
+            assert clean.index is None  # the root needs no index
+        else:
+            assert clean.index == world.index.url
         for wheel in clean.wheels:
             assert wheel.url.startswith(f"http://{world.index.host}/files/")
             expected = sha256_hex(world.wheels[clean.name].read_bytes())

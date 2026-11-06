@@ -25,3 +25,4 @@ Kept in sync with section 6 of `CLAUDE.md`, extended as we learn.
 - uv 0.13.7: `--emit-index-url` prints index URLs **with** their user info.
 - uv 0.13.7: `uv auth token URL` only sees `uv auth login` credentials, by URL prefix, and only with `--username` when they were stored with a user name. It does not see credentials from index URLs, `UV_INDEX_*` variables or netrc.
 - uv 0.13.7: `uv pip install --target DIR --no-deps --require-hashes -r -` works with `--python`; the dist-info keeps the wheel's `WHEEL` file, whose `Tag` lines identify the installed wheel.
+- uv (source at commit 24688aa): without `index` on a pylock entry, uv uses the file URL minus the file name as the index; per its own comment the only effect is the cache key (`crates/uv-lock/src/lock/export/pylock_toml.rs`).

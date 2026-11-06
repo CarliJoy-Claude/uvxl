@@ -190,6 +190,7 @@ Options after COMMAND belong to the command; indexes come from uv's own settings
 
 1. **Root (F7):** uv chooses: `uv pip install --no-deps --only-binary :all: --target <tmp> REQ` installs the wheel uv prefers for the target interpreter, and its METADATA holds the Pylock URL.
    From then on the root is bound by name and version: C7 puts every wheel the index serves for that version (URL and hash from the index) into the cleaned lock.
+   The root entry has no `index` (PEP 751: SHOULD only); uv then uses the file URL minus the file name, which only affects its cache key.
    Trade-off: if wheels of one version had different METADATA, the Pylock URL could come from another wheel than the one installed later. uv makes the same choice both times, so this is accepted for the PoC.
 2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail (no override flag in the PoC).
    No `Pylock` URL fails with `[M5]`.
@@ -230,6 +231,7 @@ Open:
 - "No solution found" from uv is reported as a generic `[C5]` rejection; a root missing from the index looks the same as a pin conflict.
 - `uv tool install` has no locked mode. `--locked` elsewhere in uv means "assert `uv.lock` is up to date", so a new flag with that name would clash in concept.
 - uv has a `ToolInstallLocks` preview feature that writes its own lock per tool.
+- Without `index` on a pylock entry, uv uses the file URL minus the file name as the index; per its own comment the only effect is the cache key (`crates/uv-lock/src/lock/export/pylock_toml.rs`, commit 24688aa).
 - `PylockToml::to_resolution` (`crates/uv-lock/src/lock/export/pylock_toml.rs`) takes URLs and sources from the lock as they are, including vcs, directory and archive. Verify-and-clean must run before it.
 - The resolver's `ResolutionMetadata` (`crates/uv-pypi-types/src/metadata/metadata_resolver.rs`) has no Project-URLs and is rkyv-cached (17 construction sites). Reading the `Pylock` URL in Rust should fetch the raw METADATA separately rather than extend that struct.
 - uv's auth middleware applies index credentials by URL prefix, so a lock under an index path would get its credentials automatically in a Rust implementation.

@@ -136,8 +136,8 @@ mod tests {
     #[test]
     fn http_needs_an_insecure_host() {
         let text = metadata(&["Pylock, http://h.example/pylock.toml"]);
-        let trusted: TrustedHost = trusted("h.example");
-        assert!(find_lock_url(&text, &[trusted]).is_ok());
+        let allowed: TrustedHost = trusted("h.example");
+        assert!(find_lock_url(&text, &[allowed]).is_ok());
         let other: TrustedHost = trusted("other.example");
         let error = find_lock_url(&text, &[other]).unwrap_err().to_string();
         assert!(error.starts_with("[M3]"), "{error}");

@@ -11,3 +11,12 @@ build-backend = "maturin"
 
 [tool.maturin]
 bindings = "bin"
+
+[tool.uv]
+# Rebuild the wheel when the Rust sources change, not only pyproject.toml.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "src/**/*.rs" },
+]

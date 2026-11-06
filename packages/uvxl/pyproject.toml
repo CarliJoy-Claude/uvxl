@@ -1,0 +1,26 @@
+[project]
+name = "uvxl"
+version = "0.1.0"
+description = "Run a Python application with the lock linked from its Pylock Project-URL (picks the Rust or Python backend)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "uvxl-py",
+]
+
+[project.optional-dependencies]
+rust = [
+    "uvxl-rs",
+]
+
+[project.scripts]
+uvxl = "uvxl:main"
+pylock-verify = "uvxl_py.cli:verify_main"
+
+[tool.uv.sources]
+uvxl-py = { workspace = true }
+uvxl-rs = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"

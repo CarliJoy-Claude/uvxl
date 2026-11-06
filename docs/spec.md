@@ -29,7 +29,10 @@ Rule IDs are used in code and error messages (for example `[C5.3]`). Keep them s
 - **F1.** Opt-in only (flag or setting). Default installer behavior is unchanged.
 - **F2.** Only the lock of the explicitly requested root package is considered. Locks of dependencies are never fetched.
 - **F3.** Credentials:
-  - If the lock URL is covered by a configured index (same origin and path prefix, as the installer's normal credential lookup decides), that index's credentials are used. This is what enables private lock hosting.
+  - If the lock URL is covered by a configured index, that index's credentials are used. This is what enables private lock hosting.
+  - Coverage: same origin, and the lock URL's path lies under the index's base path.
+    The base path is the index URL's path without a trailing `simple` or `+simple` segment.
+    Example: devpi's `https://pypi.local/user/index/+simple/` covers `https://pypi.local/user/index/+f/<hash>/pylock.toml`, but not `https://pypi.local/user/other/…`.
   - For any other host, no index credentials, netrc entries or keyring tokens are sent.
   - A redirect to a different origin drops all credentials.
 - **F4.** HTTPS only, including redirects. Redirect limit, size limit (default 1 MiB), timeout.

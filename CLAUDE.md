@@ -141,33 +141,33 @@ Signing and attestations (fragment keys reserved), locks for non-root packages, 
 │   ├── spec.md                 # the PoC spec (section 3 of this file, kept in sync)
 │   └── uv-findings.md          # section 6 of this file, extended as we learn
 └── packages/
-    ├── uvlx-py/                # Python PoC (first)
+    ├── uvxl-py/                # Python PoC (first)
     │   ├── pyproject.toml      # build backend: uv_build (or hatchling)
-    │   ├── src/uvlx/
+    │   ├── src/uvxl/
     │   └── tests/
-    └── uvlx-rs/                # Rust PoC (later), built as a wheel with maturin (bindings = "bin")
+    └── uvxl-rs/                # Rust PoC (later), built as a wheel with maturin (bindings = "bin")
         ├── pyproject.toml
         ├── Cargo.toml
         └── src/
 ```
 
 - Root `pyproject.toml`: `[tool.uv.workspace] members = ["packages/*"]`, plus `[dependency-groups] dev = [...]` (ruff, mypy, pytest, maturin later) and shared `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`.
-- Names are provisional: distribution `uvlx-py`, import package `uvlx`, console scripts `uvlx` and `pylock-verify`.
-  The Rust wheel must not clash: distribution `uvlx-rs`, binary name to decide (for example `uvlx-rs` until one wins).
+- Names are provisional: distribution `uvxl-py`, import package `uvxl`, console scripts `uvxl` and `pylock-verify`.
+  The Rust wheel must not clash: distribution `uvxl-rs`, binary name to decide (for example `uvxl-rs` until one wins).
 - Dependencies are declared **only** in each package's `pyproject.toml`. No PEP 723 headers in package code (the earlier single-file script declared them twice; that was a mistake).
 - Rust PoC: maturin with `bindings = "bin"` turns the binary into a wheel, so `uv tool install` and `uvx` can use it. The uv crates are on crates.io (0.0.98 matched uv 0.13.6) but are "internal component crates" with no stability promise: pin one exact version family. uv pins Rust 1.99 in its `rust-toolchain.toml`.
 
 ## 5. Python PoC: current state and plan
 
-### 5.1 Existing code (migrated 2026-11-05, `uvlx` added 2026-11-05, simplified 2026-11-06)
+### 5.1 Existing code (migrated 2026-11-05, `uvxl` added 2026-11-05, simplified 2026-11-06)
 
-- The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvlx-py/src/uvlx/`, split into modules:
+- The former single-file `verify_and_clean.py` (v2) now lives in `packages/uvxl-py/src/uvxl/`, split into modules:
   `errors`, `toml_values` (typed TOML access, hash tables), `urls`, `uv` (CLI runner, target interpreter), `lock` (N1, C1 to C4), `candidates` (uv's candidate pylock, yanked warnings), `clean` (C5 to C7, render).
-- Added for `uvlx`: `root` (uv picks the root, `RootWheel` from METADATA, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify` = `uvlx.cli:verify_main`, `uvlx` = `uvlx.cli:uvlx_main`).
+- Added for `uvxl`: `root` (uv picks the root, `RootWheel` from METADATA, F7), `pylock_url` (M1 to M5, N1), `fetch` (F4 to F6, no credentials), `environments` (cache, C8, P1), `run` (the flow), `cli` (click: `pylock-verify` = `uvxl.cli:verify_main`, `uvxl` = `uvxl.cli:uvxl_main`).
 - CLIs use **click**, not argparse. Tests drive them with `click.testing.CliRunner`.
-- Tests in `packages/uvlx-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvlx.py`. All passing with uv 0.13.7.
+- Tests in `packages/uvxl-py/tests/`: `helpers.py` (fake index, wheel builder, `World`), `conftest.py` (`world` fixture), `test_clean.py`, `test_cli.py`, `test_pylock_url.py`, `test_uvxl.py`. All passing with uv 0.13.7.
 - An older v1 existed that implemented its own PEP 691 HTTP client. It was replaced; do not revive it.
-- `packages/uvlx-rs` is a placeholder binary (exits 2) that already builds as a wheel with maturin.
+- `packages/uvxl-rs` is a placeholder binary (exits 2) that already builds as a wheel with maturin.
 
 ### 5.2 How v2 works (uv CLI as engine)
 
@@ -183,9 +183,9 @@ uv has no Python API (the PyPI `uv` package only ships the binary), so the PoC d
 `pylock-verify LOCK PACKAGE` (for maintainers, before publishing a lock) is a static check of the file only: N1, and every entry is a registry wheel/sdist entry with hashes, version and index (C3), except one `directory` entry for PACKAGE itself (C2). No uv, no network; everything else is checked at install.
 Exit codes: 0 ok, 1 error, 2 usage error.
 
-### 5.3 `uvlx` (run a package with its linked lock, like `uvx`): done
+### 5.3 `uvxl` (run a package with its linked lock, like `uvx`): done
 
-`uvlx [--from REQ] [--python X] [--uv-arg ARG] [--cache-dir DIR] COMMAND [ARGS]...`
+`uvxl [--from REQ] [--python X] [--uv-arg ARG] [--cache-dir DIR] COMMAND [ARGS]...`
 Options after COMMAND belong to the command; indexes come from uv's own settings, `UV_*` variables or `--uv-arg=--index-url=URL`. Errors exit 1; once the command runs, its own exit code.
 
 1. **Root (F7):** uv chooses: `uv pip install --no-deps --only-binary :all: --target <tmp> REQ` installs the wheel uv prefers for the target interpreter, and its METADATA holds the Pylock URL.
@@ -197,27 +197,27 @@ Options after COMMAND belong to the command; indexes come from uv's own settings
 3. **Fetch:** httpx2 with `follow_redirects` (limit 5), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. Pinned hash checked before parsing.
    No credentials are sent (F3 is left to the Rust version; for it: httpx2 would drop `Authorization` on cross-origin redirects and never reads netrc by itself).
 4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`.
-5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>` (cache: `--cache-dir`, `$XDG_CACHE_HOME/uvlx` or `~/.cache/uvlx`), built with `uv venv --clear` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
-   The receipt `uvlx-receipt.json` (P1: lock URL, mode, lock sha256, fetch time, root name and version) is written last; without one the environment is created again.
+5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>` (cache: `--cache-dir`, `$XDG_CACHE_HOME/uvxl` or `~/.cache/uvxl`), built with `uv venv --clear` and `uv pip install -r pylock.uvxl.toml`. The cleaned lock stays in the environment.
+   The receipt `uvxl-receipt.json` (P1: lock URL, mode, lock sha256, fetch time, root name and version) is written last; without one the environment is created again.
    The lock is fetched and verified on every run (it is mutable); only the environment is reused.
 6. **Run:** `<env>/bin/<command>` with a subprocess; the default command is the requirement's name as typed.
 
 Test-only switch: `FetchPolicy(allow_http=True)` passed as click `obj`. There is no command line flag for it.
 
 Open:
-- `uvlx install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
+- `uvxl install` (venv plus link in `~/.local/bin`) as a stand-in for `uv tool install --locked`.
 - Windows:
   - Virtual environments use `Scripts\python.exe` and `Scripts\<command>.exe` instead of `bin/` (`Uv.create_venv`, `environments.py`).
 
-### 5.5 Rust spike `uvlx-rs` (2026-11-06): works end to end
+### 5.5 Rust spike `uvxl-rs` (2026-11-06): works end to end
 
-`packages/uvlx-rs` is a wrapper on uv's crates (`=0.0.99` = uv 0.13.7), about 1,200 lines, of which about 300 are copied glue marked `COPIED from <file> (uv 0.13.7)` / `END COPIED` (changes marked `CHANGED`).
+`packages/uvxl-rs` is a wrapper on uv's crates (`=0.0.99` = uv 0.13.7), about 1,200 lines, of which about 300 are copied glue marked `COPIED from <file> (uv 0.13.7)` / `END COPIED` (changes marked `CHANGED`).
 
 - `main.rs`: parses `["uv", "tool", "uvx", args...]` with `uv_cli::Cli` (uv's own `uvx` does the same), so all `uvx` options work. Runtime setup copied from `crates/uv/src/lib.rs`.
 - `glue.rs`: settings preamble (config files, `GlobalSettings`, `CacheSettings`, `ToolRunSettings::resolve`, client builder) and `resolve()`, copied from `resolve_environment` with a `DependencyMode` parameter: `Direct` picks the root like `uv pip install --no-deps`, `Transitive` resolves with the lock's pins as constraints.
 - `pylock_url.rs` (M1 to M5, N1) and `lock.rs` (N1, C1 to C4): ports of the Python modules; markers via `MarkerTree::evaluate_pep751`. uv's `PylockToml` keeps markers, sources and hashes private, so the lock has its own serde struct.
 - `locked.rs`: the flow. Root METADATA from the PEP 658 file through `RegistryClient::uncached_client` (index auth); no PEP 658: not supported yet. Lock fetch: covered URL (F3 rule) through the same client, otherwise a client with `AuthIntegration::NoAuthMiddleware`. The resolver output is checked (C5.1 to C5.4, C7, yanked from `File.yanked`) and rebuilt as a `Resolution` (`Node::Dist` with the verified hashes, only the wheel uv picked), then `CachedEnvironment::from_locked_resolution` installs and caches it (the pattern of `uv-project-commands/src/check.rs`), and the script runs with `run_to_completion`.
-- Test switch: `UVLX_TEST_ALLOW_HTTP=1` allows an http lock URL (M3).
+- Test switch: `UVXL_TEST_ALLOW_HTTP=1` allows an http lock URL (M3).
 - Not done: P1 receipt, root without PEP 658 metadata (fallback: download the wheel), `--with`, Windows checks.
 - Out of scope: uv's client follows https to http redirects (F4); treat as an upstream issue.
 
@@ -227,9 +227,9 @@ Open:
 - Built test wheels need METADATA, WHEEL and RECORD, or uv refuses them.
 - Tamper tests must serve a *valid* wheel with different bytes; a broken zip fails before the hash check.
 - Fixture environment: `UV_NO_CACHE=1`, temp `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME`, no `NETRC`, `chdir` to tmp, proxies removed, `no_proxy=127.0.0.1`.
-- Tests that need `uv` are skipped when it is not on PATH; `test_uvlx_rs.py` runs the Rust binary against the same fake index and is skipped when it is not built (`$CARGO_TARGET_DIR/debug/uvlx-rs`).
+- Tests that need `uv` are skipped when it is not on PATH; `test_uvxl_rs.py` runs the Rust binary against the same fake index and is skipped when it is not built (`$CARGO_TARGET_DIR/debug/uvxl-rs`).
 - Pass `--allow-insecure-http`-style overrides only in tests; production code requires https.
-- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVLX_TEST_OUT` and exits 3.
+- The fake index also serves `extra_files` (a hosted lock) and `redirects`; a second `FakeIndex` on another port is a foreign origin. Test wheels can carry `Project-URL`s and a console script that writes its arguments to `$UVXL_TEST_OUT` and exits 3.
 
 ## 6. uv findings (tested with uv 0.11.32, source read at 0.13.6 / commit 564a207)
 
@@ -247,7 +247,7 @@ Open:
 - `PylockToml::to_resolution` (`crates/uv-lock/src/lock/export/pylock_toml.rs`) takes URLs and sources from the lock as they are, including vcs, directory and archive. Verify-and-clean must run before it.
 - The resolver's `ResolutionMetadata` (`crates/uv-pypi-types/src/metadata/metadata_resolver.rs`) has no Project-URLs and is rkyv-cached (17 construction sites). Reading the `Pylock` URL in Rust should fetch the raw METADATA separately rather than extend that struct.
 - uv's auth middleware applies index credentials by URL prefix, so a lock under an index path would get its credentials automatically in a Rust implementation.
-- `uv_tool_commands::run` takes 27 parameters and resolves internally with no hook for a pre-built resolution; a Rust `uvlx` needs its own run flow around `sync_environment`, plus copied settings glue from `crates/uv/src/lib.rs`.
+- `uv_tool_commands::run` takes 27 parameters and resolves internally with no hook for a pre-built resolution; a Rust `uvxl` needs its own run flow around `sync_environment`, plus copied settings glue from `crates/uv/src/lib.rs`.
 - Earlier experiments (uv 0.13.6, httpie): `uv run --frozen` with a hand-edited `uv.lock` pointing the root at the uploaded wheel works, but plain `uv run` re-locks it; pylock is ignored by `uvx`.
 - uv 0.13.7 crates: `ResolutionMetadata` has no Project-URLs and the resolver caches only that struct; `Metadata23::project_urls` is a map (duplicate labels lost). Read METADATA via the PEP 658 file instead.
 - uv 0.13.7 crates: the auth middleware tries realm-cached credentials and netrc for any URL after a 401; `AuthIntegration::NoAuthMiddleware` turns it off. Cross-origin redirects drop credentials (`CrossOriginCredentialsPolicy::Secure`), but https to http redirects are followed.
@@ -263,8 +263,8 @@ Open:
 | Option | Effort | Persistent install | Coupling |
 |---|---|---|---|
 | Fork uv, `uv tool install --locked` | about 1,500 to 2,200 lines Rust, 2 to 3 weeks | yes | rebase conflicts |
-| Rust `uvlx` on uv crates (wheel via maturin) | about 1,100 to 1,700 lines | no (run-only) | compile errors on bumps |
-| Python `uvlx` driving the uv CLI | about 300 to 500 lines on top of verify-and-clean | no (`uvlx install` workaround) | uv output formats |
+| Rust `uvxl` on uv crates (wheel via maturin) | about 1,100 to 1,700 lines | no (run-only) | compile errors on bumps |
+| Python `uvxl` driving the uv CLI | about 300 to 500 lines on top of verify-and-clean | no (`uvxl install` workaround) | uv output formats |
 
 Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting the tested Python rules one by one and reusing the same test fixtures where possible.
 
@@ -298,9 +298,9 @@ Order agreed: Python PoC first to prove the semantics; Rust PoC later, porting t
 uv sync                                   # whole workspace
 uv run pytest                             # Python tests (need uv on PATH)
 uv run ruff format && uv run ruff check
-uv run mypy packages/uvlx-py
-uv build --package uvlx-py                # wheel
-uv build --package uvlx-rs                # wheel (maturin backend, needs cargo)
+uv run mypy packages/uvxl-py
+uv build --package uvxl-py                # wheel
+uv build --package uvxl-rs                # wheel (maturin backend, needs cargo)
 ```
 
 ## 10. References

@@ -1,0 +1,23 @@
+[project]
+name = "uvxl-py"
+version = "0.1.0"
+description = "PoC: install and run a Python application with the lock linked from its Pylock Project-URL (Python implementation, drives the uv CLI)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.3",
+    "httpx2>=2.16",
+    "packaging>=26",
+    "tomli-w>=1.0",
+]
+
+[project.scripts]
+pylock-verify = "uvxl.cli:verify_main"
+uvxl = "uvxl.cli:uvxl_main"
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "uvxl"

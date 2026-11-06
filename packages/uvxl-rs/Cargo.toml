@@ -1,0 +1,52 @@
+[package]
+name = "uvxl-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[[bin]]
+name = "uvxl-rs"
+path = "src/main.rs"
+
+# The uv crates are "internal component crates" without a stability promise.
+# Pin one exact version family: 0.0.99 is uv 0.13.7.
+[dependencies]
+uv-cache = "=0.0.99"
+uv-cli = "=0.0.99"
+uv-client = "=0.0.99"
+uv-command-support = "=0.0.99"
+uv-configuration = "=0.0.99"
+uv-dispatch = "=0.0.99"
+uv-distribution = "=0.0.99"
+uv-distribution-types = "=0.0.99"
+uv-environment-operations = "=0.0.99"
+uv-flags = "=0.0.99"
+uv-install-operations = "=0.0.99"
+uv-lock = "=0.0.99"
+uv-normalize = "=0.0.99"
+uv-pep440 = "=0.0.99"
+uv-pep508 = "=0.0.99"
+uv-preview = "=0.0.99"
+uv-pypi-types = "=0.0.99"
+uv-python-discovery = "=0.0.99"
+uv-python-interpreter = "=0.0.99"
+uv-python-types = "=0.0.99"
+uv-redacted = "=0.0.99"
+uv-requirements = "=0.0.99"
+uv-resolve-operations = "=0.0.99"
+uv-resolver = "=0.0.99"
+uv-settings = "=0.0.99"
+uv-threads = "=0.0.99"
+uv-torch = "=0.0.99"
+uv-types = "=0.0.99"
+uv-workspace = "=0.0.99"
+
+anyhow = "1"
+petgraph = "0.8"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process"] }
+toml = "0.9"
+url = "2"

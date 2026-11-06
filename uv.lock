@@ -8,8 +8,8 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "uvlx-py",
-    "uvlx-rs",
+    "uvxl-py",
+    "uvxl-rs",
 ]
 
 [manifest.dependency-groups]
@@ -449,9 +449,9 @@ wheels = [
 ]
 
 [[package]]
-name = "uvlx-py"
+name = "uvxl-py"
 version = "0.1.0"
-source = { editable = "packages/uvlx-py" }
+source = { editable = "packages/uvxl-py" }
 dependencies = [
     { name = "click" },
     { name = "httpx2" },
@@ -468,6 +468,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "uvlx-rs"
+name = "uvxl-rs"
 version = "0.1.0"
-source = { editable = "packages/uvlx-rs" }
+source = { editable = "packages/uvxl-rs" }

@@ -25,7 +25,6 @@ pytestmark = pytest.mark.skipif(not BINARY.exists(), reason="uvxl-rs is not buil
 def out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "script-out.txt"
     monkeypatch.setenv("UVXL_TEST_OUT", str(path))
-    monkeypatch.setenv("UVXL_TEST_ALLOW_HTTP", "1")
     monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "uv-cache"))
     monkeypatch.delenv("UV_NO_CACHE")
     return path
@@ -52,12 +51,24 @@ def publish(
 
 
 def uvxl_rs(
-    world: World, *arguments: str, index_url: str | None = None
+    world: World,
+    *arguments: str,
+    index_url: str | None = None,
+    insecure: Sequence[str] = ("--allow-insecure-host", "127.0.0.1"),
 ) -> subprocess.CompletedProcess[str]:
+    """Run the binary. The fake index is plain http: allow it like uv does."""
     if index_url is None:
         index_url = world.index.url
     return subprocess.run(
-        [str(BINARY), "--python", sys.executable, "--index-url", index_url, *arguments],
+        [
+            str(BINARY),
+            "--python",
+            sys.executable,
+            "--index-url",
+            index_url,
+            *insecure,
+            *arguments,
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -150,3 +161,31 @@ def test_foreign_lock_host_gets_no_credentials(
     result = uvxl_rs(world, "app", index_url=index_url)
     assert result.returncode == 3, result.stderr
     assert [a for p, a in foreign.requests if p == LOCK_PATH] == [None]
+
+
+def test_http_lock_url_needs_allow_insecure_host(world: World, out: Path) -> None:
+    publish(world, world.index)
+    result = uvxl_rs(world, "app", insecure=())
+    assert result.returncode == 1
+    assert "[M3]" in result.stderr
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        ("--with", "dep-c"),
+        ("--with-editable", "."),
+        ("--with-requirements", "requirements.txt"),
+        ("--constraints", "constraints.txt"),
+        ("--overrides", "overrides.txt"),
+    ],
+)
+def test_options_that_bypass_the_lock_are_refused(
+    world: World, out: Path, option: tuple[str, str]
+) -> None:
+    publish(world, world.index)
+    result = uvxl_rs(world, *option, "app")
+    assert result.returncode == 1
+    assert "not supported with a locked run" in result.stderr
+    assert not out.exists()

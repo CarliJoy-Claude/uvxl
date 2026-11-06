@@ -3,7 +3,9 @@
 
 use anyhow::{Result, bail};
 use url::Url;
+use uv_configuration::TrustedHost;
 use uv_pypi_types::{HashAlgorithm, HashDigest};
+use uv_redacted::SafeUrl;
 
 /// Where the lock is, and the pinned hashes (empty in mutable mode).
 #[derive(Debug, Clone)]
@@ -89,7 +91,10 @@ fn parse_fragment(fragment: Option<&str>) -> Result<Vec<HashDigest>> {
 }
 
 /// The root's lock URL. Missing (M5), duplicate (M2) or invalid: fail.
-pub(crate) fn find_lock_url(metadata: &str) -> Result<LockUrl> {
+///
+/// Plain http is accepted only for hosts in uv's `--allow-insecure-host`
+/// (`UV_INSECURE_HOST`, `allow-insecure-host`), as uv does for indexes.
+pub(crate) fn find_lock_url(metadata: &str, insecure_hosts: &[TrustedHost]) -> Result<LockUrl> {
     let urls: Vec<String> = project_urls(metadata)
         .into_iter()
         .filter(|(label, _)| normalize_label(label) == "pylock")
@@ -101,9 +106,11 @@ pub(crate) fn find_lock_url(metadata: &str) -> Result<LockUrl> {
         more => bail!("[M2] the root declares {} Pylock URLs", more.len()),
     };
     let mut url = Url::parse(raw).map_err(|err| anyhow::anyhow!("[M3] {raw:?}: {err}"))?;
-    // Test-only escape hatch, like `FetchPolicy(allow_http=True)` in Python.
-    let allow_http = std::env::var_os("UVXL_TEST_ALLOW_HTTP").is_some();
-    if url.scheme() != "https" && !(allow_http && url.scheme() == "http") {
+    let insecure_allowed = url.scheme() == "http"
+        && insecure_hosts
+            .iter()
+            .any(|host| host.matches(&SafeUrl::from_url(url.clone())));
+    if url.scheme() != "https" && !insecure_allowed {
         bail!("[M3] the Pylock URL must be https: {raw:?}");
     }
     let pinned = parse_fragment(url.fragment())?;
@@ -122,6 +129,24 @@ pub(crate) fn find_lock_url(metadata: &str) -> Result<LockUrl> {
 mod tests {
     use super::*;
 
+    fn find_lock_url_strict(metadata: &str) -> Result<LockUrl> {
+        find_lock_url(metadata, &[])
+    }
+
+    #[test]
+    fn http_needs_an_insecure_host() {
+        let text = metadata(&["Pylock, http://h.example/pylock.toml"]);
+        let trusted: TrustedHost = trusted("h.example");
+        assert!(find_lock_url(&text, &[trusted]).is_ok());
+        let other: TrustedHost = trusted("other.example");
+        let error = find_lock_url(&text, &[other]).unwrap_err().to_string();
+        assert!(error.starts_with("[M3]"), "{error}");
+    }
+
+    fn trusted(host: &str) -> TrustedHost {
+        host.parse().expect("valid trusted host")
+    }
+
     const HEX: &str = "abababababababababababababababababababababababababababababababab";
 
     fn metadata(urls: &[&str]) -> String {
@@ -135,7 +160,7 @@ mod tests {
     #[test]
     fn labels_are_normalized() {
         for label in ["Pylock", "PYLOCK", "Py-Lock", "py lock"] {
-            let found = find_lock_url(&metadata(&[&format!(
+            let found = find_lock_url_strict(&metadata(&[&format!(
                 "{label}, https://h.example/pylock.toml"
             )]))
             .unwrap();
@@ -164,14 +189,16 @@ mod tests {
             ),
         ];
         for (urls, rule) in cases {
-            let error = find_lock_url(&metadata(&urls)).unwrap_err().to_string();
+            let error = find_lock_url_strict(&metadata(&urls))
+                .unwrap_err()
+                .to_string();
             assert!(error.starts_with(rule), "{urls:?}: {error}");
         }
     }
 
     #[test]
     fn pinned_hash_is_parsed_and_removed() {
-        let found = find_lock_url(&metadata(&[&format!(
+        let found = find_lock_url_strict(&metadata(&[&format!(
             "Pylock, https://h.example/pylock.prod.toml#sha256={HEX}"
         )]))
         .unwrap();

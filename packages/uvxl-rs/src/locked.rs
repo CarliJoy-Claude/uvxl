@@ -121,7 +121,10 @@ pub(crate) async fn run(context: Context<'_>) -> Result<ExitStatus> {
 
     // 2. The Pylock URL from the root's METADATA.
     let metadata = root_metadata(&client, &root).await?;
-    let lock_url = find_lock_url(&metadata)?;
+    let lock_url = find_lock_url(
+        &metadata,
+        &context.globals.network_settings.allow_insecure_host,
+    )?;
 
     // 3. Fetch the lock.
     let content = fetch_lock(&client, &context, &lock_url).await?;

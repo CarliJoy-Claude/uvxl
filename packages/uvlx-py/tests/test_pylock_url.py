@@ -65,12 +65,10 @@ def test_invalid_pins_fail(fragment: str) -> None:
         find_lock_url(metadata(f"Pylock, https://h.example/pylock.toml#{fragment}"))
 
 
-def test_unknown_fragment_parameter_fails_unless_allowed() -> None:
+def test_unknown_fragment_parameter_fails() -> None:
     entry = f"Pylock, https://h.example/pylock.toml#sha256={HEX}&sigstore=x"
     with pytest.raises(LockRejected, match=r"\[M4\]"):
         find_lock_url(metadata(entry))
-    found = find_lock_url(metadata(entry), allow_unknown_fragment=True)
-    assert found.pinned == {"sha256": HEX}
 
 
 @pytest.mark.parametrize(

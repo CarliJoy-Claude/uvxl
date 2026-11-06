@@ -51,7 +51,7 @@ def project_urls(metadata: bytes) -> tuple[tuple[str, str], ...]:
     return tuple(entries)
 
 
-def parse_fragment(fragment: str, allow_unknown: bool) -> Mapping[str, str]:
+def parse_fragment(fragment: str) -> Mapping[str, str]:
     """Rule M4: hash parameters pin the lock; anything else is refused."""
     pinned: dict[str, str] = {}
     if not fragment:
@@ -60,8 +60,6 @@ def parse_fragment(fragment: str, allow_unknown: bool) -> Mapping[str, str]:
         key, separator, value = parameter.partition("=")
         key = key.lower()
         if key not in HASH_LENGTHS:
-            if allow_unknown:
-                continue
             raise LockRejected(
                 f"[M4] unknown fragment parameter {parameter!r} in the Pylock URL"
             )
@@ -78,7 +76,6 @@ def parse_fragment(fragment: str, allow_unknown: bool) -> Mapping[str, str]:
 def find_lock_url(
     metadata: bytes,
     *,
-    allow_unknown_fragment: bool = False,
     allow_http: bool = False,
 ) -> LockUrl:
     """The root's lock URL. Missing, duplicate or invalid: fail.
@@ -107,7 +104,7 @@ def find_lock_url(
     return LockUrl(
         url=parts._replace(fragment="").geturl(),
         file_name=file_name,
-        pinned=parse_fragment(parts.fragment, allow_unknown_fragment),
+        pinned=parse_fragment(parts.fragment),
     )
 
 

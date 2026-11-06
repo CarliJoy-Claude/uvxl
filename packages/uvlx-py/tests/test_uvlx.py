@@ -59,11 +59,8 @@ def lock_sha256(world: World) -> str:
 def uvlx(
     world: World,
     *arguments: str,
-    index_url: str | None = None,
     policy: FetchPolicy | None = None,
 ) -> Result:
-    if index_url is None:
-        index_url = world.index.url
     if policy is None:
         policy = FetchPolicy(allow_http=True)
     return CliRunner().invoke(
@@ -71,8 +68,7 @@ def uvlx(
         [
             "--python",
             sys.executable,
-            "--index-url",
-            index_url,
+            f"--uv-arg=--index-url={world.index.url}",
             "--cache-dir",
             str(world.directory / "uvlx-cache"),
             *arguments,
@@ -163,8 +159,8 @@ def test_from_with_extras(world: World, out: Path) -> None:
 def test_missing_command_is_an_error(world: World, out: Path) -> None:
     publish_app(world, f"Pylock, {host_lock(world)}")
     result = uvlx(world, "--from", "app", "nope")
-    assert result.exit_code == 2
-    assert "no command 'nope'" in result.stderr
+    assert result.exit_code == 1
+    assert "provides no 'nope'" in result.stderr
 
 
 def test_pinned_lock(world: World, out: Path) -> None:
@@ -197,13 +193,11 @@ def test_pinned_hash_mismatch_fails_before_parsing(world: World, out: Path) -> N
     assert environments(world) == ()
 
 
-def test_unknown_fragment_needs_the_override(world: World, out: Path) -> None:
+def test_unknown_fragment_is_refused(world: World, out: Path) -> None:
     publish_app(world, f"Pylock, {host_lock(world)}#future=1")
-    refused = uvlx(world, "app")
-    assert refused.exit_code == 1
-    assert "[M4]" in refused.stderr
-    allowed = uvlx(world, "--allow-unknown-fragment", "app")
-    assert allowed.exit_code == 3, allowed.stderr
+    result = uvlx(world, "app")
+    assert result.exit_code == 1
+    assert "[M4]" in result.stderr
 
 
 def test_http_lock_url_is_refused_in_production(world: World, out: Path) -> None:
@@ -216,7 +210,7 @@ def test_http_lock_url_is_refused_in_production(world: World, out: Path) -> None
 def test_missing_lock_is_a_fetch_error(world: World, out: Path) -> None:
     publish_app(world, f"Pylock, {world.index.base()}/nothing/pylock.toml")
     result = uvlx(world, "app")
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "[F6]" in result.stderr
     assert "404" in result.stderr
 
@@ -224,7 +218,7 @@ def test_missing_lock_is_a_fetch_error(world: World, out: Path) -> None:
 def test_oversized_lock_is_refused(world: World, out: Path) -> None:
     publish_app(world, f"Pylock, {host_lock(world)}")
     result = uvlx(world, "app", policy=FetchPolicy(allow_http=True, max_size=100))
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "[F4]" in result.stderr
 
 
@@ -232,7 +226,7 @@ def test_too_many_redirects(world: World, out: Path) -> None:
     world.index.redirects["/loop/pylock.toml"] = "/loop/pylock.toml"
     publish_app(world, f"Pylock, {world.index.base()}/loop/pylock.toml")
     result = uvlx(world, "app")
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "redirects" in result.stderr
 
 

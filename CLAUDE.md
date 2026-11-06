@@ -181,18 +181,18 @@ uv has no Python API (the PyPI `uv` package only ships the binary), so the PoC d
 6. Markers are evaluated for the **target** interpreter (found with `uv python find`, queried with a small script), not the one running the tool.
 
 CLI: `pylock-verify-clean WHEEL LOCK [--extra X] [--python REQ] [--uv PATH] [-o pylock.x.toml] [--install] [-- <args passed to every uv pip call>]`.
-Exit codes: 0 ok, 1 lock rejected, 2 uv, network or usage error.
+Exit codes: 0 ok, 1 error, 2 usage error.
 
 ### 5.3 `uvlx` (run a package with its linked lock, like `uvx`): done
 
-`uvlx [--from REQ] [--python X] [--index-url URL] [--extra-index-url URL] [--uv-arg ARG] [--cache-dir DIR] [--allow-unknown-fragment] COMMAND [ARGS]...`
-Options after COMMAND belong to the command. Exit codes as above; once the command runs, its own exit code.
+`uvlx [--from REQ] [--python X] [--uv-arg ARG] [--cache-dir DIR] COMMAND [ARGS]...`
+Options after COMMAND belong to the command; indexes come from uv's own settings, `UV_*` variables or `--uv-arg=--index-url=URL`. Errors exit 1; once the command runs, its own exit code.
 
 1. **Root (F7):** uv chooses: `uv pip install --no-deps --only-binary :all: --target <tmp> REQ` installs the wheel uv prefers for the target interpreter, and its METADATA holds the Pylock URL.
    From then on the root is bound by name and version: C7 puts every wheel the index serves for that version (URL and hash from the index) into the cleaned lock.
    Trade-off: if wheels of one version had different METADATA, the Pylock URL could come from another wheel than the one installed later. uv makes the same choice both times, so this is accepted for the PoC.
    `pylock-verify-clean` still binds the root to its local file (`RootWheel.file`).
-2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail unless `--allow-unknown-fragment`.
+2. **URL:** `Project-URL` headers read with the email parser (duplicates kept for M2), labels normalized, https only, N1 on the last path segment, fragment hashes for pinned mode, unknown parameters fail (no override flag in the PoC).
    No `Pylock` URL fails with `[M5]`.
 3. **Fetch:** httpx2 with `follow_redirects` (limit 5; it drops `Authorization` once a redirect leaves the origin), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. httpx2 never reads netrc by itself. Pinned hash checked before parsing.
    No credentials are sent (F3 is left to the Rust version).

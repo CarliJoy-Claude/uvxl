@@ -132,7 +132,7 @@ def test_tampered_download_fails_the_hash_check(world: World) -> None:
     # Same size, different bytes: uv must get to the hash check.
     serve_twin(world, real_salt="real", twin_salt="twin")
     result = install_cli(world, fresh_venv(world))
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "hash" in result.stderr.lower()
 
 
@@ -140,5 +140,5 @@ def test_tampered_download_of_other_size_fails_the_install(world: World) -> None
     # uv 0.13 compares the locked size first and fails before hashing.
     serve_twin(world, real_salt="", twin_salt="twin")
     result = install_cli(world, fresh_venv(world))
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "dep-b" in result.stderr

@@ -1,46 +1,37 @@
 """Command line entry points (click).
 
-Exit codes: 0 ok, 1 lock rejected, 2 uv, network or usage error.
-``uvlx`` exits with the command's own exit code once the command runs.
+Errors exit with 1 (usage errors with 2); ``uvlx`` passes on the exit code of
+the command it runs.
 
 Tests pass ``obj=FetchPolicy(allow_http=True)`` to reach a local index;
 there is deliberately no command line flag for that.
 """
 
 import subprocess
-import sys
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 import click
 
-from uvlx.clean import CleanResult, clean, render
+from uvlx.clean import clean, render
 from uvlx.environments import default_cache_dir
-from uvlx.errors import FetchError, LockRejected, UvError, VerifyError
+from uvlx.errors import VerifyError
 from uvlx.fetch import FetchPolicy
 from uvlx.lock import is_pylock_name
 from uvlx.root import parse_root_request
-from uvlx.run import Prepared, prepare
+from uvlx.run import prepare
 from uvlx.uv import Uv, find_interpreter, find_uv
 
-EXIT_REJECTED = 1
-EXIT_ERROR = 2
 
-
-def guarded[T](action: Callable[[], T]) -> T:
-    """Run ``action``; report our errors on stderr and exit with their code."""
+@contextmanager
+def reported_errors() -> Iterator[None]:
+    """Turn our errors into a click error: message on stderr, exit 1."""
     try:
-        return action()
-    except LockRejected as error:
-        click.echo(f"rejected: {error}", err=True)
-        sys.exit(EXIT_REJECTED)
-    except (UvError, FetchError) as error:
-        click.echo(f"error: {error}", err=True)
-        sys.exit(EXIT_ERROR)
+        yield
     except VerifyError as error:
-        click.echo(f"rejected: {error}", err=True)
-        sys.exit(EXIT_REJECTED)
+        raise click.ClickException(str(error)) from error
 
 
 def make_uv(uv_path: str | None, python: str | None, uv_args: Sequence[str]) -> Uv:
@@ -51,24 +42,6 @@ def make_uv(uv_path: str | None, python: str | None, uv_args: Sequence[str]) -> 
 # --------------------------------------------------------------------------
 # pylock-verify-clean
 # --------------------------------------------------------------------------
-
-
-def write_and_install(
-    result: CleanResult, uv: Uv, output: Path | None, install: bool
-) -> None:
-    text = render(result)
-    if output is None and install:
-        with tempfile.TemporaryDirectory() as directory:
-            lock = Path(directory) / "pylock.toml"
-            lock.write_text(text, encoding="utf-8")
-            uv.install(lock)
-        return
-    if output is None:
-        click.echo(text, nl=False)
-    else:
-        output.write_text(text, encoding="utf-8")
-    if install and output is not None:
-        uv.install(output)
 
 
 @click.command(
@@ -123,42 +96,28 @@ def verify_clean_main(  # noqa: PLR0913
             f"output name {output.name!r} must be pylock.toml or "
             "pylock.<name>.toml (PEP 751), or installers will refuse it"
         )
-
-    def action() -> CleanResult:
+    with reported_errors(), tempfile.TemporaryDirectory() as directory:
         uv = make_uv(uv_path, python, uv_args)
         result = clean(wheel, lock, uv, extras)
-        write_and_install(result, uv, output, install)
-        return result
-
-    result = guarded(action)
-    summary = (
+        text = render(result)
+        cleaned = Path(directory) / "pylock.toml"
+        if output is not None:
+            cleaned = output
+        cleaned.write_text(text, encoding="utf-8")
+        if install:
+            uv.install(cleaned)
+    if output is None and not install:
+        click.echo(text, nl=False)
+    click.echo(
         f"ok: {len(result.packages)} package(s) in the cleaned lock; "
-        f"{len(result.unreached)} lock entr(ies) not needed"
+        f"lock entries not needed: [{', '.join(result.unreached)}]",
+        err=True,
     )
-    if result.unreached:
-        summary += f": {', '.join(result.unreached)}"
-    if install:
-        summary += "; installed"
-    click.echo(summary, err=True)
 
 
 # --------------------------------------------------------------------------
 # uvlx
 # --------------------------------------------------------------------------
-
-
-def describe(prepared: Prepared) -> str:
-    lock_url = prepared.fetched.lock_url
-    if prepared.environment.created:
-        state = "created"
-    else:
-        state = "reused"
-    return (
-        f"uvlx: {prepared.root.name} {prepared.root.version} with "
-        f"{lock_url.mode} lock {lock_url.url} "
-        f"({len(prepared.result.packages)} package(s)); "
-        f"environment {state}: {prepared.environment.path}"
-    )
 
 
 @click.command(
@@ -183,27 +142,19 @@ def describe(prepared: Prepared) -> str:
     help="Target interpreter, as understood by `uv python find`.",
 )
 @click.option("--uv", "uv_path", metavar="PATH", help="The uv executable to use.")
-@click.option("--index-url", metavar="URL", help="Passed to uv.")
-@click.option(
-    "--extra-index-url", multiple=True, metavar="URL", help="Passed to uv; repeatable."
-)
 @click.option(
     "--uv-arg",
-    "uv_extra",
+    "uv_args",
     multiple=True,
     metavar="ARG",
-    help="Any other argument for every uv pip call; repeatable.",
+    help="An argument for every uv pip call, like `--uv-arg=--index-url=URL`; "
+    "repeatable. uv's own settings and UV_* variables apply as usual.",
 )
 @click.option(
     "--cache-dir",
     type=click.Path(path_type=Path, file_okay=False),
     help="Where environments are kept. Default: $UVLX_CACHE_DIR, "
     "$XDG_CACHE_HOME/uvlx or ~/.cache/uvlx.",
-)
-@click.option(
-    "--allow-unknown-fragment",
-    is_flag=True,
-    help="Ignore unknown fragment parameters of the Pylock URL (overrides M4).",
 )
 @click.pass_context
 def uvlx_main(  # noqa: PLR0913
@@ -214,11 +165,8 @@ def uvlx_main(  # noqa: PLR0913
     from_: str | None,
     python: str | None,
     uv_path: str | None,
-    index_url: str | None,
-    extra_index_url: tuple[str, ...],
-    uv_extra: tuple[str, ...],
+    uv_args: tuple[str, ...],
     cache_dir: Path | None,
-    allow_unknown_fragment: bool,
 ) -> None:
     """Run COMMAND from a package installed with the lock its metadata links.
 
@@ -228,42 +176,30 @@ def uvlx_main(  # noqa: PLR0913
     policy = context.find_object(FetchPolicy)
     if policy is None:
         policy = FetchPolicy()
-    uv_args: list[str] = []
-    if index_url is not None:
-        uv_args.extend(("--index-url", index_url))
-    for url in extra_index_url:
-        uv_args.extend(("--extra-index-url", url))
-    uv_args.extend(uv_extra)
     if cache_dir is None:
         cache_dir = default_cache_dir()
-    resolved_cache = cache_dir
-
-    def action() -> tuple[Prepared, str]:
-        if from_ is None:
-            request = parse_root_request(command)
-            executable = request.raw_name
-        else:
-            request = parse_root_request(from_)
-            executable = command
+    if from_ is None:
+        requirement = command
+    else:
+        requirement = from_
+    with reported_errors():
+        request = parse_root_request(requirement)
         uv = make_uv(uv_path, python, uv_args)
-        prepared = prepare(
-            uv,
-            request,
-            resolved_cache,
-            policy,
-            allow_unknown_fragment=allow_unknown_fragment,
-        )
-        return prepared, executable
-
-    prepared, executable = guarded(action)
-    click.echo(describe(prepared), err=True)
-    path = prepared.environment.executable(executable)
+        prepared = prepare(uv, request, cache_dir, policy)
+    if from_ is None:
+        command = request.raw_name
+    environment = prepared.environment
+    state = "reused"
+    if environment.created:
+        state = "created"
+    click.echo(
+        f"uvlx: {prepared.root.name} {prepared.root.version}, "
+        f"{prepared.fetched.lock_url.mode} lock {prepared.fetched.lock_url.url}, "
+        f"environment {state}: {environment.path}",
+        err=True,
+    )
+    path = environment.executable(command)
     if not path.is_file():
-        click.echo(
-            f"error: {prepared.root.name} provides no command {executable!r} "
-            f"(looked for {path})",
-            err=True,
-        )
-        sys.exit(EXIT_ERROR)
+        raise click.ClickException(f"{prepared.root.name} provides no {command!r}")
     completed = subprocess.run((str(path), *args), check=False)
-    sys.exit(completed.returncode)
+    context.exit(completed.returncode)

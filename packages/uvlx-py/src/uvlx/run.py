@@ -33,16 +33,10 @@ def prepare(
     request: RootRequest,
     cache_dir: Path,
     policy: FetchPolicy,
-    *,
-    allow_unknown_fragment: bool = False,
 ) -> Prepared:
     """Build (or reuse) the locked environment for ``request``."""
     root = select_root(uv, request)
-    lock_url = find_lock_url(
-        root.metadata,
-        allow_unknown_fragment=allow_unknown_fragment,
-        allow_http=policy.allow_http,
-    )
+    lock_url = find_lock_url(root.metadata, allow_http=policy.allow_http)
     fetched = fetch_lock(lock_url, policy)
     result = clean_root(
         root, lock_url.file_name, fetched.content, uv, tuple(sorted(request.extras))

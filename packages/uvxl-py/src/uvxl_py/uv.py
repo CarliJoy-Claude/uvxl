@@ -60,20 +60,28 @@ class Uv:
     """The uv executable, the target interpreter, and uvx options for uv.
 
     ``global_args`` go to every uv call (cache, network, configuration),
-    ``resolver_args`` only to the ``uv pip`` calls (indexes, resolution).
+    ``resolver_args`` only to the ``uv pip`` calls (indexes, resolution),
+    ``output_args`` (``-q``, ``-v``) only to calls whose output is not read.
     """
 
     executable: str
     python: str
     global_args: tuple[str, ...] = ()
     resolver_args: tuple[str, ...] = ()
+    output_args: tuple[str, ...] = ()
 
     @property
     def pip_args(self) -> tuple[str, ...]:
         return (*self.global_args, *self.resolver_args)
 
     def with_python(self, python: str) -> "Uv":
-        return Uv(self.executable, python, self.global_args, self.resolver_args)
+        return Uv(
+            self.executable,
+            python,
+            self.global_args,
+            self.resolver_args,
+            self.output_args,
+        )
 
     def cache_dir(self) -> Path:
         """uv's cache directory (``--cache-dir``, ``UV_CACHE_DIR``, default)."""
@@ -114,7 +122,7 @@ class Uv:
     def install(self, lock: Path) -> None:
         """Rule C8: install a cleaned lock; uv enforces its hashes."""
         arguments = ("pip", "install", "--python", self.python, "-r", str(lock))
-        run_uv(self.executable, (*arguments, *self.pip_args))
+        run_uv(self.executable, (*arguments, *self.pip_args, *self.output_args))
 
     def install_target(self, requirement: str, target: Path) -> None:
         """Install one wheel, without dependencies, into a plain directory."""
@@ -130,12 +138,12 @@ class Uv:
             ":all:",
             requirement,
         )
-        run_uv(self.executable, (*arguments, *self.pip_args))
+        run_uv(self.executable, (*arguments, *self.pip_args, *self.output_args))
 
     def create_venv(self, path: Path) -> str:
         """Create (or recreate) a virtual environment for the target interpreter."""
         arguments = ("venv", "--quiet", "--clear", "--python", self.python, str(path))
-        run_uv(self.executable, (*arguments, *self.global_args))
+        run_uv(self.executable, (*arguments, *self.global_args, *self.output_args))
         return str(executable(path, "python"))
 
 

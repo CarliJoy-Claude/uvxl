@@ -33,10 +33,17 @@ def make_uv(
     python: str | None,
     global_args: Sequence[str] = (),
     resolver_args: Sequence[str] = (),
+    output_args: Sequence[str] = (),
 ) -> Uv:
     executable = find_uv()
     interpreter = find_interpreter(executable, python, global_args)
-    return Uv(executable, interpreter, tuple(global_args), tuple(resolver_args))
+    return Uv(
+        executable,
+        interpreter,
+        tuple(global_args),
+        tuple(resolver_args),
+        tuple(output_args),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -74,8 +81,9 @@ class UvOption:
     flags: tuple[str, ...]
     # "flag" (no value), "count" (repeatable flag), "value" or "values".
     kind: str
-    # Every uv call (False) or only the ``uv pip`` calls (True).
-    resolver: bool
+    # "global": every uv call; "resolver": the ``uv pip`` calls; "output":
+    # only calls whose output uvxl-py does not read (``-q`` would empty it).
+    scope: str
 
     @property
     def name(self) -> str:
@@ -84,29 +92,29 @@ class UvOption:
 
 # The uvx options both backends support, with uvx's names and meaning.
 PASS_THROUGH: Final = (
-    UvOption(("--index",), "values", resolver=True),
-    UvOption(("--default-index",), "value", resolver=True),
-    UvOption(("-i", "--index-url"), "value", resolver=True),
-    UvOption(("--extra-index-url",), "values", resolver=True),
-    UvOption(("-f", "--find-links"), "values", resolver=True),
-    UvOption(("--no-index",), "flag", resolver=True),
-    UvOption(("--index-strategy",), "value", resolver=True),
-    UvOption(("--keyring-provider",), "value", resolver=True),
-    UvOption(("--resolution",), "value", resolver=True),
-    UvOption(("--prerelease",), "value", resolver=True),
-    UvOption(("--exclude-newer",), "value", resolver=True),
-    UvOption(("-n", "--no-cache"), "flag", resolver=False),
-    UvOption(("--cache-dir",), "value", resolver=False),
-    UvOption(("--offline",), "flag", resolver=False),
-    UvOption(("--allow-insecure-host",), "values", resolver=False),
-    UvOption(("--system-certs",), "flag", resolver=False),
-    UvOption(("--config-file",), "value", resolver=False),
-    UvOption(("--no-config",), "flag", resolver=False),
-    UvOption(("--managed-python",), "flag", resolver=False),
-    UvOption(("--no-managed-python",), "flag", resolver=False),
-    UvOption(("--no-python-downloads",), "flag", resolver=False),
-    UvOption(("-q", "--quiet"), "count", resolver=False),
-    UvOption(("-v", "--verbose"), "count", resolver=False),
+    UvOption(("--index",), "values", scope="resolver"),
+    UvOption(("--default-index",), "value", scope="resolver"),
+    UvOption(("-i", "--index-url"), "value", scope="resolver"),
+    UvOption(("--extra-index-url",), "values", scope="resolver"),
+    UvOption(("-f", "--find-links"), "values", scope="resolver"),
+    UvOption(("--no-index",), "flag", scope="resolver"),
+    UvOption(("--index-strategy",), "value", scope="resolver"),
+    UvOption(("--keyring-provider",), "value", scope="resolver"),
+    UvOption(("--resolution",), "value", scope="resolver"),
+    UvOption(("--prerelease",), "value", scope="resolver"),
+    UvOption(("--exclude-newer",), "value", scope="resolver"),
+    UvOption(("-n", "--no-cache"), "flag", scope="global"),
+    UvOption(("--cache-dir",), "value", scope="global"),
+    UvOption(("--offline",), "flag", scope="global"),
+    UvOption(("--allow-insecure-host",), "values", scope="global"),
+    UvOption(("--system-certs",), "flag", scope="global"),
+    UvOption(("--config-file",), "value", scope="global"),
+    UvOption(("--no-config",), "flag", scope="global"),
+    UvOption(("--managed-python",), "flag", scope="global"),
+    UvOption(("--no-managed-python",), "flag", scope="global"),
+    UvOption(("--no-python-downloads",), "flag", scope="global"),
+    UvOption(("-q", "--quiet"), "count", scope="output"),
+    UvOption(("-v", "--verbose"), "count", scope="output"),
 )
 
 # uvx options that would bypass the lock: refused, as by the Rust backend.
@@ -141,13 +149,13 @@ def uvx_options[F: Callable[..., None]](function: F) -> F:
     return function
 
 
-def uv_arguments(options: Mapping[str, object], resolver: bool) -> tuple[str, ...]:
+def uv_arguments(options: Mapping[str, object], scope: str) -> tuple[str, ...]:
     """The uv arguments for the pass-through options of one group."""
     arguments: list[str] = []
     for spec in PASS_THROUGH:
         value = options[spec.name]
         flag = spec.flags[-1]
-        if spec.resolver != resolver:
+        if spec.scope != scope:
             continue
         if spec.kind == "flag" and value:
             arguments.append(flag)
@@ -219,7 +227,10 @@ def uvxl_main(
     with reported_errors():
         request = parse_root_request(requirement)
         uv = make_uv(
-            python, uv_arguments(options, resolver=False), uv_arguments(options, True)
+            python,
+            uv_arguments(options, "global"),
+            uv_arguments(options, "resolver"),
+            uv_arguments(options, "output"),
         )
         prepared = prepare(uv, request, insecure_hosts)
     if from_ is None:

@@ -1,0 +1,76 @@
+# Run with `uv run prek run --all-files` (prek reads this pre-commit format).
+# CI runs the same hooks in the checks job.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format .
+        language: system
+        pass_filenames: false
+
+      - id: ruff-fix
+        name: ruff fix
+        entry: uv run ruff check --fix --quiet --exit-zero .
+        language: system
+        pass_filenames: false
+
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check .
+        language: system
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --manifest-path packages/uvxl-rs/Cargo.toml --check
+        language: system
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --manifest-path packages/uvxl-rs/Cargo.toml --all-targets -- -D warnings
+        language: system
+        pass_filenames: false
+
+      - id: cargo-test
+        name: cargo test (Rust unit tests)
+        entry: cargo test --manifest-path packages/uvxl-rs/Cargo.toml
+        language: system
+        pass_filenames: false
+
+      # Test the commands' entry points (imports are correct)
+      - id: test-cli
+        name: uvxl and uvxl-py --help
+        entry: bash -c 'uv run uvxl --help > /dev/null && uv run uvxl-py --help > /dev/null'
+        language: system
+        pass_filenames: false
+
+      # All tests once: Python coverage data, and Rust coverage of an
+      # instrumented uvxl-rs (gated at 100% for the PoC's own Rust code).
+      - id: tests
+        name: pytest (Python and Rust coverage)
+        entry: bash -c 'uv run coverage erase && scripts/rust-coverage.sh coverage run -m pytest -q'
+        language: system
+        pass_filenames: false
+        require_serial: true
+
+      # Combine + always output coverage + always generate HTML + enforce minimum
+      - id: coverage-report
+        name: coverage (combine, html, report, fail-under)
+        entry: >
+          bash -c
+          'uv run coverage combine &&
+           uv run coverage html --fail-under=0 &&
+           uv run coverage xml --fail-under=0 &&
+           uv run coverage report'
+        language: system
+        verbose: true
+        pass_filenames: false
+        require_serial: true

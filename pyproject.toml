@@ -90,6 +90,7 @@ combine-as-imports = true
 
 [tool.mypy]
 strict = true
+files = ["packages/uvxl/src", "packages/uvxl-py/src", "tests"]
 python_version = "3.12"
 mypy_path = ["packages/uvxl/src", "packages/uvxl-py/src", "tests"]
 explicit_package_bases = true

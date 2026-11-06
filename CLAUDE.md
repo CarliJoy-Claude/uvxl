@@ -197,8 +197,8 @@ Options after COMMAND belong to the command; indexes come from uv's own settings
 3. **Fetch:** httpx2 with `follow_redirects` (limit 5; it drops `Authorization` once a redirect leaves the origin), a request hook refusing non-https hops, streamed body limited to 1 MiB, 30 s timeout. httpx2 never reads netrc by itself. Pinned hash checked before parsing.
    No credentials are sent (F3 is left to the Rust version).
 4. **Verify and clean:** `clean_root(root, lock_name, lock_bytes, uv, extras)`; `clean(wheel_path, lock_path, ...)` remains for `pylock-verify-clean`.
-5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>`, built with `uv venv` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
-   The receipt `uvlx-receipt.json` (P1: lock URL, final URL, mode, pins, lock sha256, fetch time, root file and hashes, cleaned-lock sha256, interpreter) is written last; an environment without one is rebuilt.
+5. **Environment:** `<cache>/envs/<sha256(interpreter + cleaned lock)[:32]>` (cache: `--cache-dir`, `$XDG_CACHE_HOME/uvlx` or `~/.cache/uvlx`), built with `uv venv --clear` and `uv pip install -r pylock.uvlx.toml`. The cleaned lock stays in the environment.
+   The receipt `uvlx-receipt.json` (P1: lock URL, mode, lock sha256, fetch time, root name and version) is written last; without one the environment is created again.
    The lock is fetched and verified on every run (it is mutable); only the environment is reused.
 6. **Run:** `<env>/bin/<command>` with a subprocess; the default command is the requirement's name as typed.
 

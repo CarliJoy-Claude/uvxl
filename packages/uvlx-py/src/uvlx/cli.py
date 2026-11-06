@@ -153,8 +153,7 @@ def verify_clean_main(  # noqa: PLR0913
 @click.option(
     "--cache-dir",
     type=click.Path(path_type=Path, file_okay=False),
-    help="Where environments are kept. Default: $UVLX_CACHE_DIR, "
-    "$XDG_CACHE_HOME/uvlx or ~/.cache/uvlx.",
+    help="Where environments are kept. Default: $XDG_CACHE_HOME/uvlx or ~/.cache/uvlx.",
 )
 @click.pass_context
 def uvlx_main(  # noqa: PLR0913

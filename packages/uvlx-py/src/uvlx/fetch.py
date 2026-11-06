@@ -35,7 +35,6 @@ class FetchPolicy:
 @dataclass(frozen=True, slots=True)
 class FetchedLock:
     lock_url: LockUrl
-    final_url: str
     content: bytes
     sha256: str
     fetched_at: str
@@ -53,8 +52,8 @@ def https_only(policy: FetchPolicy) -> Callable[[httpx2.Request], None]:
     return check
 
 
-def download(url: str, policy: FetchPolicy) -> tuple[str, bytes]:
-    """GET ``url`` without credentials; return the final URL and the body."""
+def download(url: str, policy: FetchPolicy) -> bytes:
+    """GET ``url`` without credentials; return the body."""
     client = httpx2.Client(
         follow_redirects=True,
         max_redirects=policy.max_redirects,
@@ -72,7 +71,7 @@ def download(url: str, policy: FetchPolicy) -> tuple[str, bytes]:
                     raise FetchError(
                         f"[F4] the lock at {url} is larger than {policy.max_size} bytes"
                     )
-            return str(response.url), bytes(content)
+            return bytes(content)
     except httpx2.TooManyRedirects as error:
         raise FetchError(f"[F4] too many redirects for {url}") from error
     except httpx2.HTTPError as error:
@@ -94,11 +93,10 @@ def verify_pinned(lock_url: LockUrl, content: bytes) -> None:
 
 def fetch_lock(lock_url: LockUrl, policy: FetchPolicy) -> FetchedLock:
     """Fetch and (in pinned mode) verify the lock. Any failure is fatal (F6)."""
-    final_url, content = download(lock_url.url, policy)
+    content = download(lock_url.url, policy)
     verify_pinned(lock_url, content)
     return FetchedLock(
         lock_url=lock_url,
-        final_url=final_url,
         content=content,
         sha256=hashlib.sha256(content).hexdigest(),
         fetched_at=datetime.now(UTC).isoformat(timespec="seconds"),

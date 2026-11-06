@@ -137,8 +137,15 @@ class Uv:
             raise UvError(f"uv pip install --target failed:\n{message}")
 
     def create_venv(self, path: Path) -> str:
-        """Create a virtual environment for the target interpreter."""
-        command = (self.executable, "venv", "--quiet", "--python", self.python)
+        """Create (or recreate) a virtual environment for the target interpreter."""
+        command = (
+            self.executable,
+            "venv",
+            "--quiet",
+            "--clear",
+            "--python",
+            self.python,
+        )
         result = subprocess.run(
             (*command, str(path)), capture_output=True, text=True, check=False
         )

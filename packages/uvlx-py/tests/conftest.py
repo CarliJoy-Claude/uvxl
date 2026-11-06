@@ -15,7 +15,6 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv("NETRC", raising=False)
-    monkeypatch.delenv("UVLX_CACHE_DIR", raising=False)
     monkeypatch.setenv("UV_NO_CACHE", "1")
     for variable in ("http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"):
         monkeypatch.delenv(variable, raising=False)

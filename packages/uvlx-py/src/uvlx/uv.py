@@ -34,9 +34,24 @@ def without_noise(stderr: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class CompileOutput:
+class UvOutput:
     stdout: str
     stderr: str
+
+
+def run_uv(executable: str, arguments: Sequence[str], stdin: str = "") -> UvOutput:
+    """Run uv; any failure raises with uv's stderr."""
+    process = subprocess.run(
+        (executable, *arguments),
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    stderr = without_noise(process.stderr)
+    if process.returncode != 0:
+        raise VerifyError(f"uv {' '.join(arguments[:2])} failed:\n{stderr}")
+    return UvOutput(process.stdout, stderr)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,13 +64,15 @@ class Uv:
 
     def compile(
         self, requirement: str, constraints: str, options: Sequence[str]
-    ) -> CompileOutput:
-        """Run ``uv pip compile -``: the requirement on stdin, constraints in a file."""
+    ) -> UvOutput:
+        """Run ``uv pip compile -``: the requirement on stdin, constraints in a file.
+
+        "No solution found" means the lock's pins do not fit (C5).
+        """
         with tempfile.TemporaryDirectory(prefix="uvlx-") as directory:
             constraints_file = Path(directory) / "constraints.txt"
             constraints_file.write_text(constraints, encoding="utf-8")
-            command = (
-                self.executable,
+            arguments = (
                 "pip",
                 "compile",
                 "-",
@@ -67,43 +84,23 @@ class Uv:
                 *options,
                 *self.extra_args,
             )
-            process = subprocess.run(
-                command,
-                input=requirement + "\n",
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        stderr = without_noise(process.stderr)
-        if process.returncode != 0:
-            if "No solution found" in stderr:
-                raise LockRejected(
-                    "[C5] uv finds no resolution within the lock's pins:\n" + stderr
-                )
-            raise VerifyError(f"uv pip compile failed:\n{stderr}")
-        return CompileOutput(process.stdout, stderr)
+            try:
+                return run_uv(self.executable, arguments, requirement + "\n")
+            except VerifyError as error:
+                if "No solution found" in str(error):
+                    raise LockRejected(
+                        f"[C5] uv finds no resolution within the lock's pins: {error}"
+                    ) from error
+                raise
 
     def install(self, lock: Path) -> None:
         """Rule C8: install a cleaned lock; uv enforces its hashes."""
-        command = (
-            self.executable,
-            "pip",
-            "install",
-            "--python",
-            self.python,
-            "-r",
-            str(lock),
-            *self.extra_args,
-        )
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            message = without_noise(result.stderr)
-            raise VerifyError(f"uv pip install failed:\n{message}")
+        arguments = ("pip", "install", "--python", self.python, "-r", str(lock))
+        run_uv(self.executable, (*arguments, *self.extra_args))
 
     def install_target(self, requirement: str, target: Path) -> None:
         """Install one wheel, without dependencies, into a plain directory."""
-        command = (
-            self.executable,
+        arguments = (
             "pip",
             "install",
             "--python",
@@ -114,28 +111,13 @@ class Uv:
             "--only-binary",
             ":all:",
             requirement,
-            *self.extra_args,
         )
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            message = without_noise(result.stderr)
-            raise VerifyError(f"uv pip install --target failed:\n{message}")
+        run_uv(self.executable, (*arguments, *self.extra_args))
 
     def create_venv(self, path: Path) -> str:
         """Create (or recreate) a virtual environment for the target interpreter."""
-        command = (
-            self.executable,
-            "venv",
-            "--quiet",
-            "--clear",
-            "--python",
-            self.python,
-        )
-        result = subprocess.run(
-            (*command, str(path)), capture_output=True, text=True, check=False
-        )
-        if result.returncode != 0:
-            raise VerifyError(f"uv venv failed:\n{without_noise(result.stderr)}")
+        arguments = ("venv", "--quiet", "--clear", "--python", self.python, str(path))
+        run_uv(self.executable, arguments)
         return str(path / "bin" / "python")
 
 
@@ -150,13 +132,10 @@ def find_uv(explicit: str | None) -> str:
 
 def find_interpreter(uv: str, request: str | None) -> str:
     """The interpreter uv would use (respecting .venv and uv's settings)."""
-    command: tuple[str, ...] = (uv, "python", "find")
+    arguments: tuple[str, ...] = ("python", "find")
     if request is not None:
-        command = (*command, request)
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise VerifyError(f"uv python find failed:\n{without_noise(result.stderr)}")
-    return result.stdout.strip()
+        arguments = (*arguments, request)
+    return run_uv(uv, arguments).stdout.strip()
 
 
 def marker_environment(interpreter: str) -> Mapping[str, str]:
